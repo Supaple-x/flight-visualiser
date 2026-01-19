@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(npm run dev:*)",
+      "Bash(where.exe:*)",
+      "Bash(\"C:\\Program Files\\nodejs\\npm.cmd\" --version)",
+      "Bash(cmd.exe /c \"set PATH=C:\\Program Files\\nodejs;%PATH% && npm run dev\")",
+      "Bash(dir \"C:\\Users\\zinna\\Downloads\\Telegram Desktop\\*.kml\" /b 2)",
+      "Bash(nul)",
+      "Bash(start-dev.bat)",
+      "Bash(cmd.exe /c \"cd /d c:\\Users\\zinna\\Documents\\Kostya\\flight-visualizer && set PATH=C:\\Program Files\\nodejs;%PATH% && npm run dev\")",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command \"Get-ChildItem -Recurse -Exclude node_modules | Select-Object FullName | ForEach-Object { $_FullName.Substring\\(''c:\\\\Users\\\\zinna\\\\Documents\\\\Kostya\\\\flight-visualizer''.Length\\).TrimStart\\(''\\\\''\\) }\")",
+      "Bash(find:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INAV Flight Visualizer</title>
+    <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Logo on Upload Screen -->
+        <div id="logoUpload" class="logo-upload">
+            <img src="/logo.png" alt="Homo Digitalis - Визуализатор логов НВО-73" />
+        </div>
+
+        <!-- File Upload Zone -->
+        <div id="dropZone" class="drop-zone">
+            <!-- Tabs for different log types -->
+            <div class="log-tabs">
+                <button class="log-tab log-tab--active" data-tab="inav">INAV</button>
+                <button class="log-tab" data-tab="ardupilot">Ardupilot</button>
+                <button class="log-tab" data-tab="ud">ЮД</button>
+            </div>
+
+            <div class="drop-zone__content">
+                <svg class="drop-zone__icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+
+                <!-- INAV Tab Content -->
+                <div id="inavTabContent" class="tab-content tab-content--active">
+                    <h2>Загрузка файлов лога INAV</h2>
+
+                    <!-- GPS File -->
+                    <div class="file-upload-group">
+                        <label for="gpsFileInput" class="file-label">
+                            <span class="file-label__text">GPS файл (.gps.csv)</span>
+                            <span class="file-label__status" id="gpsFileStatus">Не выбран</span>
+                        </label>
+                        <input type="file" id="gpsFileInput" accept=".csv,.txt,.log" hidden>
+                    </div>
+
+                    <!-- Full Log File (Optional) -->
+                    <div class="file-upload-group">
+                        <label for="fullLogFileInput" class="file-label">
+                            <span class="file-label__text">Полный лог (опционально)</span>
+                            <span class="file-label__status" id="fullLogFileStatus">Не выбран</span>
+                        </label>
+                        <input type="file" id="fullLogFileInput" accept=".csv,.txt,.log" hidden>
+                    </div>
+
+                    <p class="upload-hint">или перетащите файлы сюда</p>
+                    <button id="loadButton" class="btn btn--primary" style="display: none; margin-top: 10px;">Загрузить</button>
+                </div>
+
+                <!-- Ardupilot Tab Content -->
+                <div id="ardupilotTabContent" class="tab-content">
+                    <h2>Загрузка файлов лога Ardupilot</h2>
+
+                    <!-- TXT Log File from MissionPlanner -->
+                    <div class="file-upload-group">
+                        <label for="txtLogFileInput" class="file-label">
+                            <span class="file-label__text">Log File (.txt)</span>
+                            <span class="file-label__status" id="txtLogFileStatus">Не выбран</span>
+                        </label>
+                        <input type="file" id="txtLogFileInput" accept=".txt" hidden>
+                    </div>
+
+                    <!-- Waypoints File (Optional) -->
+                    <div class="file-upload-group">
+                        <label for="waypointsFileInput" class="file-label">
+                            <span class="file-label__text">Waypoints (опционально)</span>
+                            <span class="file-label__status" id="waypointsFileStatus">Не выбран</span>
+                        </label>
+                        <input type="file" id="waypointsFileInput" accept=".waypoints,.txt" hidden>
+                    </div>
+
+                    <p class="upload-hint">или перетащите файлы сюда</p>
+                    <button id="loadButtonArdupilot" class="btn btn--primary" style="display: none; margin-top: 10px;">Загрузить</button>
+                </div>
+
+                <!-- UD Tab Content -->
+                <div id="udTabContent" class="tab-content">
+                    <h2>Загрузка файлов лога ЮД(Денис)</h2>
+
+                    <!-- DAT File from Denis drone -->
+                    <div class="file-upload-group">
+                        <label for="datFileInput" class="file-label">
+                            <span class="file-label__text">DAT файл (.dat)</span>
+                            <span class="file-label__status" id="datFileStatus">Не выбран</span>
+                        </label>
+                        <input type="file" id="datFileInput" accept=".dat" hidden>
+                    </div>
+
+                    <p class="upload-hint">или перетащите файл сюда</p>
+                    <button id="loadButtonDenis" class="btn btn--primary" style="display: none; margin-top: 10px;">Загрузить</button>
+                </div>
+            </div>
+
+            <div class="drop-zone__progress" id="progress" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-bar__fill" id="progressBar"></div>
+                    <span class="progress-bar__percentage" id="progressPercentage">0%</span>
+                </div>
+                <p id="progressText">Загрузка файла...</p>
+                <p id="progressDetails" style="font-size: 12px; color: #888; margin-top: 5px;"></p>
+            </div>
+        </div>
+
+        <!-- 3D Visualization Container -->
+        <div id="canvas-container" style="display: none;">
+            <canvas id="scene"></canvas>
+        </div>
+
+        <!-- Logo on Visualization Screen -->
+        <div id="logoViz" class="logo-visualization" style="display: none;">
+            <img src="/logo.png" alt="Homo Digitalis" />
+        </div>
+
+        <!-- Exit Button -->
+        <button id="exitButton" class="exit-button" style="display: none;" title="Вернуться к загрузке файла">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Выход</span>
+        </button>
+
+        <!-- Telemetry Panel -->
+        <div id="telemetry" class="telemetry-panel" style="display: none;">
+            <div class="telemetry-panel__header">
+                <h3>Телеметрия</h3>
+                <button class="telemetry-panel__toggle" id="telemetryToggle" title="Свернуть/Развернуть">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="telemetry-panel__grid" id="telemetryContent">
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ВРЕМЯ:</span>
+                    <span class="telemetry-item__value" id="time">0.0s</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ВЫСОТА:</span>
+                    <span class="telemetry-item__value" id="altitude">0m</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">СКОРОСТЬ:</span>
+                    <span class="telemetry-item__value" id="speed">0 m/s</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">GPS:</span>
+                    <span class="telemetry-item__value" id="gps">0.0000, 0.0000</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ROLL:</span>
+                    <span class="telemetry-item__value" id="roll">0°</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">PITCH:</span>
+                    <span class="telemetry-item__value" id="pitch">0°</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">YAW:</span>
+                    <span class="telemetry-item__value" id="yaw">0°</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">СПУТНИКИ:</span>
+                    <span class="telemetry-item__value" id="satellites">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Extended Telemetry Panel -->
+        <div id="extendedTelemetry" class="telemetry-panel extended-telemetry-panel" style="display: none;">
+            <div class="telemetry-panel__header">
+                <h3>Расширенная телеметрия</h3>
+                <button class="telemetry-panel__toggle" id="extendedTelemetryToggle" title="Свернуть/Развернуть">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="telemetry-panel__grid" id="extendedTelemetryContent">
+                <!-- Battery -->
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">БАТАРЕЯ:</span>
+                    <span class="telemetry-item__value" id="battery">0.0V</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ТОК:</span>
+                    <span class="telemetry-item__value" id="current">0.0A</span>
+                </div>
+
+                <!-- Motors -->
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">МОТОР 1:</span>
+                    <span class="telemetry-item__value" id="motor0">0</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">МОТОР 2:</span>
+                    <span class="telemetry-item__value" id="motor1">0</span>
+                </div>
+
+                <!-- Gyro -->
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ГИРО X:</span>
+                    <span class="telemetry-item__value" id="gyroX">0</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ГИРО Y:</span>
+                    <span class="telemetry-item__value" id="gyroY">0</span>
+                </div>
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">ГИРО Z:</span>
+                    <span class="telemetry-item__value" id="gyroZ">0</span>
+                </div>
+
+                <!-- Barometer -->
+                <div class="telemetry-item">
+                    <span class="telemetry-item__label">БАРО:</span>
+                    <span class="telemetry-item__value" id="baroAlt">0m</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- GPS Source Selection Panel -->
+        <div id="gpsSourcePanel" class="telemetry-panel gps-source-panel" style="display: none;">
+            <div class="telemetry-panel__header">
+                <h3>Источник GPS</h3>
+                <button class="telemetry-panel__toggle" id="gpsSourceToggle" title="Свернуть/Развернуть">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="telemetry-panel__content" id="gpsSourceContent">
+                <div class="gps-source-options">
+                    <label class="gps-source-option">
+                        <input type="radio" name="gpsSource" value="global_position_int" id="gpsSourceGlobal" checked>
+                        <div class="gps-source-label">
+                            <span class="gps-source-title">GLOBAL_POSITION_INT</span>
+                            <span class="gps-source-description">(EKF фильтрованные данные)</span>
+                        </div>
+                    </label>
+                    <label class="gps-source-option">
+                        <input type="radio" name="gpsSource" value="gps_raw_int" id="gpsSourceRaw">
+                        <div class="gps-source-label">
+                            <span class="gps-source-title">GPS_RAW_INT</span>
+                            <span class="gps-source-description">(Необработанные GPS данные)</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Visibility Controls Panel -->
+        <div id="visibilityPanel" class="telemetry-panel visibility-panel" style="display: none;">
+            <div class="telemetry-panel__header">
+                <h3>Отображение</h3>
+                <button class="telemetry-panel__toggle" id="visibilityToggle" title="Свернуть/Развернуть">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="telemetry-panel__content" id="visibilityContent">
+                <div class="visibility-controls">
+                    <label class="visibility-control">
+                        <input type="checkbox" id="toggleTrajectory" checked>
+                        <span>Показать лог</span>
+                    </label>
+                    <label class="visibility-control">
+                        <input type="checkbox" id="toggleWaypoints" checked>
+                        <span>Показать миссию</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Denis Statistics Panel (shown only for Denis logs) -->
+        <div id="denisStatsPanel" class="telemetry-panel denis-stats-panel" style="display: none;">
+            <div class="telemetry-panel__header">
+                <h3>Статистика парсинга ЮД(Денис)</h3>
+                <button class="telemetry-panel__toggle" id="denisStatsToggle" title="Свернуть/Развернуть">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="telemetry-panel__content" id="denisStatsContent">
+                <div class="denis-stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Всего записей:</span>
+                        <span class="stat-value" id="denisStatRecords">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Известные GPS:</span>
+                        <span class="stat-value" id="denisStatKnownGPS">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Найденные GPS:</span>
+                        <span class="stat-value" id="denisStatDiscoveredGPS">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Всего GPS точек:</span>
+                        <span class="stat-value" id="denisStatTotalGPS">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Телеметрия:</span>
+                        <span class="stat-value" id="denisStatTelemetry">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Соотношение:</span>
+                        <span class="stat-value" id="denisStatRatio">-</span>
+                    </div>
+                    <div class="stat-item stat-item--wide">
+                        <span class="stat-label">Центр области:</span>
+                        <span class="stat-value" id="denisStatRegionCenter">-</span>
+                    </div>
+                    <div class="stat-item stat-item--wide">
+                        <span class="stat-label">Размер области:</span>
+                        <span class="stat-value" id="denisStatRegionSize">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div id="statusBar" class="status-bar" style="display: none;">
+            <span id="statusText">Готов</span>
+            <span id="statusDetails" class="status-details"></span>
+        </div>
+
+        <!-- Map Controls Panel -->
+        <div id="mapControls" class="map-controls-panel" style="display: none;">
+            <select id="mapTypeSelect" class="select select--small">
+                <option value="satellite">Спутник</option>
+                <option value="hybrid">Гибрид</option>
+                <option value="roadmap">Схема</option>
+            </select>
+            <button id="mapToggleElevation" class="btn btn--secondary btn--small" title="Включить рельеф">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <line x1="3" y1="11" x2="21" y2="11"></line>
+                </svg>
+                Рельеф
+            </button>
+        </div>
+
+        <!-- Controls Panel -->
+        <div id="controls" class="controls-panel" style="display: none;">
+            <!-- Timeline -->
+            <div class="timeline">
+                <input type="range" id="timeline" class="timeline__slider" min="0" max="100" value="0">
+                <div class="timeline__labels">
+                    <span id="currentTime">0:00</span>
+                    <span id="totalTime">0:00</span>
+                </div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="playback-controls">
+                <button id="playPause" class="btn btn--primary">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                </button>
+                <button id="loopButton" class="btn btn--secondary" title="Loop playback">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                    </svg>
+                </button>
+                <select id="playbackSpeed" class="select">
+                    <option value="0.1">0.1x</option>
+                    <option value="0.25">0.25x</option>
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="2">2x</option>
+                    <option value="4">4x</option>
+                </select>
+            </div>
+
+            <!-- Camera Mode -->
+            <div class="camera-controls">
+                <label>Камера:</label>
+                <div class="btn-group">
+                    <button id="cameraTop" class="btn btn--secondary btn--active">Сверху</button>
+                    <button id="cameraFollow" class="btn btn--secondary">Следовать</button>
+                    <button id="cameraFPV" class="btn btn--secondary">FPV</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
