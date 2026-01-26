@@ -84,41 +84,48 @@ export class Telemetry {
 
         // Update time
         if (this.elements.time) {
-            this.elements.time.textContent = this.formatTime(point.time);
+            this.elements.time.textContent = this.formatTime(point.time || 0);
         }
 
         // Update altitude
-        if (this.elements.altitude) {
+        if (this.elements.altitude && point.gps?.altitude != null) {
             this.elements.altitude.textContent = `${point.gps.altitude.toFixed(1)}m`;
         }
 
         // Update speed
-        if (this.elements.speed) {
+        if (this.elements.speed && point.gps?.speed != null) {
             // Скорость уже в правильных единицах из парсера
-            this.elements.speed.textContent = `${point.gps.speed.toFixed(1)} m/s`;
+            const speedText = `${point.gps.speed.toFixed(1)} m/s`;
+            if (point.gps.speedEstimated) {
+                // Estimated speed - show in orange with label
+                this.elements.speed.innerHTML = `<span style="color: #ff9800;">${speedText}</span> <span style="color: #ff9800; font-size: 10px;">(Расч.)</span>`;
+            } else {
+                this.elements.speed.textContent = speedText;
+                this.elements.speed.style.color = ''; // Reset color
+            }
         }
 
         // Update GPS coordinates
-        if (this.elements.gps) {
+        if (this.elements.gps && point.gps?.lat != null && point.gps?.lon != null) {
             this.elements.gps.textContent =
                 `${point.gps.lat.toFixed(6)}, ${point.gps.lon.toFixed(6)}`;
         }
 
         // Update attitude (already in degrees from parser)
-        if (this.elements.roll) {
+        if (this.elements.roll && point.attitude?.roll != null) {
             this.elements.roll.textContent = `${point.attitude.roll.toFixed(1)}°`;
         }
 
-        if (this.elements.pitch) {
+        if (this.elements.pitch && point.attitude?.pitch != null) {
             this.elements.pitch.textContent = `${point.attitude.pitch.toFixed(1)}°`;
         }
 
-        if (this.elements.yaw) {
+        if (this.elements.yaw && point.attitude?.yaw != null) {
             this.elements.yaw.textContent = `${point.attitude.yaw.toFixed(1)}°`;
         }
 
         // Update satellite count
-        if (this.elements.satellites) {
+        if (this.elements.satellites && point.gps?.numSat != null) {
             this.elements.satellites.textContent = point.gps.numSat.toString();
         }
 
@@ -183,6 +190,8 @@ export class Telemetry {
                 lon: point1.gps.lon + (point2.gps.lon - point1.gps.lon) * t,
                 altitude: point1.gps.altitude + (point2.gps.altitude - point1.gps.altitude) * t,
                 speed: point1.gps.speed + (point2.gps.speed - point1.gps.speed) * t,
+                speedEstimated: point1.gps.speedEstimated || point2.gps.speedEstimated,
+                distanceToNext: point1.gps.distanceToNext,
                 numSat: point1.gps.numSat
             },
             attitude: {

@@ -1,21 +1,39 @@
 import * as THREE from 'three';
+
+// Cesium CSS (required for Cesium widgets)
+import 'cesium/Build/Cesium/Widgets/widgets.css';
+
 import { InavLogParser } from './parsers/inavLogParser.js';
 import { DualLogParser } from './parsers/dualLogParser.js';
 import { MissionPlannerParser } from './parsers/missionPlannerParser.js';
 import { WaypointsParser } from './parsers/waypointsParser.js';
 import { DenisLogParser } from './parsers/denisLogParser.js';
+import { MigachevParser } from './parsers/migachevParser.js';
+
+// Cesium.js imports (new high-quality terrain visualization)
+import { CesiumViewer } from './cesium/CesiumViewer.js';
+import { TrajectoryEntity } from './cesium/TrajectoryEntity.js';
+import { WaypointsEntity } from './cesium/WaypointsEntity.js';
+import { DroneEntity } from './cesium/DroneEntity.js';
+import { CesiumCameraController } from './cesium/CesiumCameraController.js';
+
+// Legacy Three.js imports (fallback)
 import { SceneManager } from './scene/SceneManager.js';
 import { TrajectoryLine } from './scene/TrajectoryLine.js';
 import { WaypointsLine } from './scene/WaypointsLine.js';
 import { DroneModel } from './scene/DroneModel.js';
 import { TerrainLoader } from './scene/TerrainLoader.js';
 import { CameraController } from './controls/CameraController.js';
+
 import { PlaybackController } from './controls/PlaybackController.js';
 import { Telemetry } from './ui/Telemetry.js';
 import { Timeline } from './ui/Timeline.js';
 
 // Make THREE available globally for other modules
 window.THREE = THREE;
+
+// Use Cesium by default (set to false for legacy Three.js mode)
+const USE_CESIUM = true;
 
 console.log('%c✅ main-debug.js loaded!', 'color: green; font-size: 16px; font-weight: bold');
 console.log('Three.js version:', THREE.REVISION);
@@ -30,12 +48,24 @@ class FlightVisualizerApp {
         // State
         this.flightData = null;
         this.waypointsData = null;
+        this.useCesium = USE_CESIUM;
+
+        // Cesium components (new)
+        this.cesiumViewer = null;
+        this.trajectoryEntity = null;
+        this.waypointsEntity = null;
+        this.droneEntity = null;
+        this.cesiumCameraController = null;
+
+        // Three.js components (legacy fallback)
         this.sceneManager = null;
         this.trajectoryLine = null;
         this.waypointsLine = null;
         this.droneModel = null;
         this.terrainLoader = null;
         this.cameraController = null;
+
+        // Shared
         this.playbackController = null;
         this.telemetry = null;
         this.timeline = null;
@@ -60,6 +90,11 @@ class FlightVisualizerApp {
         this.datFileStatus = document.getElementById('datFileStatus');
         this.loadButtonDenis = document.getElementById('loadButtonDenis');
 
+        // Мигачев_1 UI elements
+        this.migachevFileInput = document.getElementById('migachevFileInput');
+        this.migachevFileStatus = document.getElementById('migachevFileStatus');
+        this.loadButtonMigachev = document.getElementById('loadButtonMigachev');
+
         this.canvasContainer = document.getElementById('canvas-container');
         this.canvas = document.getElementById('scene');
         this.progressBar = document.getElementById('progressBar');
@@ -73,6 +108,7 @@ class FlightVisualizerApp {
         this.selectedTxtLogFile = null;
         this.selectedWaypointsFile = null;
         this.selectedDatFile = null;
+        this.selectedMigachevFile = null;
 
         // Active tab state
         this.activeTab = 'inav';
@@ -104,7 +140,8 @@ class FlightVisualizerApp {
         const tabContents = {
             'inav': document.getElementById('inavTabContent'),
             'ardupilot': document.getElementById('ardupilotTabContent'),
-            'ud': document.getElementById('udTabContent')
+            'ud': document.getElementById('udTabContent'),
+            'migachev': document.getElementById('migachevTabContent')
         };
 
         tabs.forEach(tab => {
@@ -245,6 +282,31 @@ class FlightVisualizerApp {
             this.loadFilesDenis();
         });
 
+        // ===== Мигачев_1 file inputs =====
+
+        // Migachev file input
+        const migachevFileLabel = this.migachevFileInput?.closest('.file-label');
+        migachevFileLabel?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.migachevFileInput.click();
+        });
+
+        this.migachevFileInput?.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('📄 Мигачев file selected:', file.name);
+                this.selectedMigachevFile = file;
+                this.migachevFileStatus.textContent = file.name;
+                this.migachevFileStatus.classList.add('file-selected');
+                this.updateLoadButtonMigachev();
+            }
+        });
+
+        // Load button for Мигачев
+        this.loadButtonMigachev?.addEventListener('click', () => {
+            this.loadFilesMigachev();
+        });
+
         // Drag and drop for entire drop zone
         this.dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -307,6 +369,14 @@ class FlightVisualizerApp {
             this.loadButtonDenis.style.display = 'block';
         } else {
             this.loadButtonDenis.style.display = 'none';
+        }
+    }
+
+    updateLoadButtonMigachev() {
+        if (this.selectedMigachevFile) {
+            this.loadButtonMigachev.style.display = 'block';
+        } else {
+            this.loadButtonMigachev.style.display = 'none';
         }
     }
 
@@ -476,6 +546,13 @@ class FlightVisualizerApp {
         if (this.datFileStatus) this.datFileStatus.textContent = 'Не выбран';
         if (this.datFileStatus) this.datFileStatus.classList.remove('file-selected');
         if (this.loadButtonDenis) this.loadButtonDenis.style.display = 'none';
+
+        // Clear file inputs and state - Мигачев_1
+        if (this.migachevFileInput) this.migachevFileInput.value = '';
+        this.selectedMigachevFile = null;
+        if (this.migachevFileStatus) this.migachevFileStatus.textContent = 'Не выбран';
+        if (this.migachevFileStatus) this.migachevFileStatus.classList.remove('file-selected');
+        if (this.loadButtonMigachev) this.loadButtonMigachev.style.display = 'none';
 
         console.log('✅ Returned to main menu');
     }
@@ -721,6 +798,146 @@ class FlightVisualizerApp {
         }
     }
 
+    async loadFilesMigachev() {
+        try {
+            if (!this.selectedMigachevFile) {
+                alert('Пожалуйста, выберите файл маршрута');
+                return;
+            }
+
+            console.log(`%c📥 Loading Мигачев_1 files:`, 'color: blue; font-weight: bold');
+            console.log('  File:', this.selectedMigachevFile.name, `(${(this.selectedMigachevFile.size / 1024).toFixed(2)} KB)`);
+
+            // Show progress
+            document.body.style.cursor = 'wait';
+            const migachevContent = document.getElementById('migachevTabContent');
+            if (migachevContent) {
+                migachevContent.style.display = 'none';
+            }
+            this.progressContainer.style.display = 'block';
+
+            // Parse waypoints file
+            console.log('🔍 Parsing Мигачев_1 waypoints file...');
+            this.updateProgress(30, 'Парсинг файла маршрута...');
+
+            const parser = new MigachevParser();
+            this.waypointsData = await parser.parse(this.selectedMigachevFile);
+
+            console.log('%c✅ Waypoints parsed successfully!', 'color: green; font-weight: bold');
+            console.log('📊 Waypoints data:', {
+                waypoints: this.waypointsData.waypoints.length,
+                allWaypoints: this.waypointsData.allWaypoints.length,
+                bounds: this.waypointsData.bounds,
+                homeAltitude: this.waypointsData.homeAltitude
+            });
+
+            // Create pseudo flight data from waypoints for visualization compatibility
+            if (this.waypointsData.waypoints.length > 0 && this.waypointsData.bounds) {
+                this.updateProgress(60, 'Подготовка визуализации...');
+
+                // Validate bounds
+                const bounds = this.waypointsData.bounds;
+                if (!isFinite(bounds.minLat) || !isFinite(bounds.maxLat) ||
+                    !isFinite(bounds.minLon) || !isFinite(bounds.maxLon)) {
+                    throw new Error('Некорректные координаты в файле маршрута');
+                }
+
+                // Calculate distances and estimated speeds between waypoints
+                const waypoints = this.waypointsData.waypoints;
+                const ASSUMED_CRUISE_SPEED = 15; // m/s - assumed cruise speed for estimation
+
+                // Haversine formula to calculate distance between two GPS points
+                const calculateDistance = (lat1, lon1, lat2, lon2) => {
+                    const R = 6371000; // Earth radius in meters
+                    const dLat = (lat2 - lat1) * Math.PI / 180;
+                    const dLon = (lon2 - lon1) * Math.PI / 180;
+                    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    return R * c;
+                };
+
+                // Create flight points from waypoints with calculated speeds
+                const flightPoints = waypoints.map((wp, index) => {
+                    let estimatedSpeed = 0;
+                    let distanceToNext = 0;
+
+                    // Calculate distance to next waypoint
+                    if (index < waypoints.length - 1) {
+                        const nextWp = waypoints[index + 1];
+                        const horizontalDist = calculateDistance(wp.lat, wp.lon, nextWp.lat, nextWp.lon);
+                        const altDiff = Math.abs((nextWp.altAbsolute || nextWp.alt || 0) - (wp.altAbsolute || wp.alt || 0));
+                        distanceToNext = Math.sqrt(horizontalDist * horizontalDist + altDiff * altDiff);
+                        estimatedSpeed = ASSUMED_CRUISE_SPEED; // Use assumed cruise speed
+                    }
+
+                    return {
+                        time: index,
+                        gps: {
+                            lat: wp.lat,
+                            lon: wp.lon,
+                            altitude: wp.altAbsolute || wp.alt || 0,
+                            speed: estimatedSpeed,
+                            speedEstimated: true, // Flag for telemetry to show as "Расчетная"
+                            distanceToNext: distanceToNext,
+                            numSat: 0
+                        },
+                        attitude: {
+                            roll: 0,
+                            pitch: 0,
+                            yaw: 0
+                        }
+                    };
+                });
+
+                // Ensure altitude bounds are valid
+                if (!isFinite(bounds.minAlt)) bounds.minAlt = 0;
+                if (!isFinite(bounds.maxAlt)) bounds.maxAlt = 500;
+
+                this.flightData = {
+                    points: flightPoints,
+                    duration: Math.max(1, flightPoints.length - 1),
+                    bounds: bounds,
+                    source: 'migachev'
+                };
+
+                console.log('📊 Created pseudo flight data:', {
+                    points: this.flightData.points.length,
+                    duration: this.flightData.duration,
+                    bounds: this.flightData.bounds
+                });
+            } else {
+                throw new Error('Файл не содержит навигационных точек или некорректный формат');
+            }
+
+            // Initialize 3D visualization
+            this.updateProgress(100, 'Инициализация 3D сцены...');
+            console.log('🎨 Starting 3D visualization...');
+            await this.initVisualization();
+
+            // Hide drop zone, show visualization
+            document.body.style.cursor = 'default';
+            this.dropZone.style.display = 'none';
+            this.canvasContainer.style.display = 'block';
+
+            console.log('%c🎉 Мигачев_1 visualization loaded!', 'color: green; font-size: 18px; font-weight: bold');
+
+        } catch (error) {
+            console.error('%c❌ Error loading Мигачев_1 files:', 'color: red; font-weight: bold', error);
+            console.error('Stack trace:', error.stack);
+            alert(`Ошибка загрузки файла Мигачев_1: ${error.message}`);
+
+            // Reset UI
+            document.body.style.cursor = 'default';
+            const migachevContent = document.getElementById('migachevTabContent');
+            if (migachevContent) {
+                migachevContent.style.display = 'block';
+            }
+            this.progressContainer.style.display = 'none';
+        }
+    }
+
     updateProgress(percentage, text) {
         if (this.progressBar) {
             this.progressBar.style.width = `${percentage}%`;
@@ -737,154 +954,249 @@ class FlightVisualizerApp {
 
     async initVisualization() {
         console.log('🎬 initVisualization() called');
+        console.log(`🌍 Using ${this.useCesium ? 'Cesium.js (Google Earth quality)' : 'Three.js (legacy)'}`);
 
         try {
-            // Create scene manager
-            console.log('1️⃣ Creating SceneManager...');
-            this.sceneManager = new SceneManager(this.canvas);
-            console.log('✅ SceneManager created');
-
-            // Create terrain (ground plane for now)
-            console.log('2️⃣ Creating TerrainLoader...');
-            this.terrainLoader = new TerrainLoader(this.sceneManager, this.flightData.bounds);
-
-            // Setup status bar callback
-            this.terrainLoader.setStatusCallback((message, details) => {
-                this.updateStatusBar(message, details);
-            });
-
-            await this.terrainLoader.loadTerrain(this.flightData.bounds);
-            console.log('✅ Terrain loaded');
-
-            // Create trajectory line
-            console.log('3️⃣ Creating TrajectoryLine...');
-            this.trajectoryLine = new TrajectoryLine(this.sceneManager, this.flightData);
-            console.log('✅ Trajectory created');
-
-            // Create waypoints line if waypoints data exists
-            if (this.waypointsData && this.waypointsData.waypoints.length > 0) {
-                console.log('3.5️⃣ Creating WaypointsLine...');
-                const centerLat = (this.flightData.bounds.minLat + this.flightData.bounds.maxLat) / 2;
-                const centerLon = (this.flightData.bounds.minLon + this.flightData.bounds.maxLon) / 2;
-                // Use the same ground level as trajectory line for consistent positioning
-                const groundLevel = this.trajectoryLine ? this.trajectoryLine.groundLevel : 0;
-                // Waypoints use relative altitude (AGL), need HOME altitude (MSL) to convert to absolute
-                // Use first point altitude as HOME altitude (takeoff point)
-                const homeAltitudeMSL = this.flightData.points[0]?.gps?.altitude || this.flightData.bounds.minAlt;
-                console.log('🏠 Using HOME altitude:', homeAltitudeMSL.toFixed(2), 'm (MSL)');
-                this.waypointsLine = new WaypointsLine(
-                    this.sceneManager,
-                    this.waypointsData,
-                    centerLat,
-                    centerLon,
-                    groundLevel,
-                    homeAltitudeMSL
-                );
-                console.log('✅ Waypoints visualization created');
+            if (this.useCesium) {
+                await this.initCesiumVisualization();
+            } else {
+                await this.initThreeJsVisualization();
             }
-
-            // Create drone model
-            console.log('4️⃣ Creating DroneModel...');
-            this.droneModel = new DroneModel(this.sceneManager);
-            console.log('✅ Drone model created');
-
-            // Create camera controller
-            console.log('5️⃣ Creating CameraController...');
-            this.cameraController = new CameraController(this.sceneManager, this.droneModel);
-            console.log('✅ Camera controller created');
-
-            // Focus camera on flight bounds
-            console.log('📷 Focusing camera on bounds...');
-            this.sceneManager.focusOnBounds(this.flightData.bounds);
-
-            // Create playback controller
-            console.log('6️⃣ Creating PlaybackController...');
-            this.playbackController = new PlaybackController(
-                this.flightData,
-                this.droneModel,
-                this.cameraController
-            );
-            console.log('✅ Playback controller created');
-
-            // Create UI components
-            console.log('7️⃣ Creating UI components...');
-            this.telemetry = new Telemetry();
-            this.timeline = new Timeline(this.playbackController);
-            console.log('✅ UI components created');
-
-            // Setup playback callbacks
-            console.log('8️⃣ Setting up callbacks...');
-            this.playbackController.onUpdate((data) => {
-                this.telemetry.update(data.currentPoint, data.nextPoint, data.interpolation);
-                this.timeline.update(data);
-            });
-            console.log('✅ Callbacks set up');
-
-            // Setup render loop callback
-            console.log('9️⃣ Setting up render loop...');
-            this.sceneManager.onRender(() => {
-                this.playbackController.update();
-            });
-            console.log('✅ Render loop set up');
-
-            // Set timeline duration
-            this.timeline.setDuration(this.flightData.duration);
-            console.log('⏱️ Timeline duration set:', this.flightData.duration);
-
-            // Focus camera on trajectory
-            console.log('🎥 Focusing camera on trajectory...');
-            this.sceneManager.focusOnBounds(this.flightData.bounds);
-            console.log('✅ Camera focused');
-
-            // Show UI
-            this.telemetry.show();
-            this.timeline.show();
-
-            // Show GPS source panel if this is MissionPlanner data with multiple sources
-            this.setupGpsSourcePanel();
-
-            // Show visibility controls panel
-            this.setupVisibilityPanel();
-
-            // Show Denis statistics panel if this is Denis data
-            this.setupDenisStatsPanel();
-
-            // Show status bar and map controls
-            const statusBar = document.getElementById('statusBar');
-            const mapControls = document.getElementById('mapControls');
-            if (statusBar) statusBar.style.display = 'block';
-            if (mapControls) mapControls.style.display = 'flex';
-
-            // Hide upload logo, show visualization logo
-            const logoUpload = document.getElementById('logoUpload');
-            const logoViz = document.getElementById('logoViz');
-            if (logoUpload) logoUpload.style.display = 'none';
-            if (logoViz) logoViz.style.display = 'block';
-
-            // Show exit button
-            if (this.exitButton) {
-                this.exitButton.style.display = 'inline-flex';
-            }
-
-            console.log('👁️ UI panels shown');
-
-            // Initialize drone at first position
-            console.log('🚁 Initializing drone position...');
-            this.playbackController.seek(0);
-            console.log('✅ Drone positioned');
-
-            // Expose drone model to global scope for debugging
-            window.droneModel = this.droneModel;
-            console.log('🔧 Debug: window.droneModel available');
-            console.log('   Commands: droneModel.toggleOrientationAxes()');
-
-            console.log('%c✅ Visualization fully initialized!', 'color: green; font-size: 16px; font-weight: bold');
-
         } catch (error) {
             console.error('%c❌ Error in initVisualization:', 'color: red; font-weight: bold', error);
             console.error('Stack trace:', error.stack);
-            throw error;
+
+            // Fallback to Three.js if Cesium fails
+            if (this.useCesium) {
+                console.warn('⚠️ Cesium failed, falling back to Three.js...');
+                this.useCesium = false;
+                await this.initThreeJsVisualization();
+            } else {
+                throw error;
+            }
         }
+    }
+
+    /**
+     * Initialize visualization using Cesium.js (high quality terrain like Google Earth)
+     */
+    async initCesiumVisualization() {
+        console.log('🌍 Initializing Cesium.js visualization...');
+
+        // Create Cesium viewer with World Terrain
+        console.log('1️⃣ Creating CesiumViewer...');
+        this.cesiumViewer = new CesiumViewer('cesiumContainer');
+
+        // Wait for Cesium to initialize
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('✅ CesiumViewer created with World Terrain');
+
+        // Create trajectory entity
+        console.log('2️⃣ Creating TrajectoryEntity...');
+        this.trajectoryEntity = new TrajectoryEntity(this.cesiumViewer);
+        this.trajectoryEntity.create(this.flightData);
+        console.log('✅ Trajectory created');
+
+        // Create waypoints entity if data exists
+        if (this.waypointsData && this.waypointsData.waypoints.length > 0) {
+            console.log('3️⃣ Creating WaypointsEntity...');
+            this.waypointsEntity = new WaypointsEntity(this.cesiumViewer);
+            this.waypointsEntity.create(this.waypointsData);
+            console.log('✅ Waypoints created');
+        }
+
+        // Create drone entity
+        console.log('4️⃣ Creating DroneEntity...');
+        this.droneEntity = new DroneEntity(this.cesiumViewer);
+        await this.droneEntity.create();
+        console.log('✅ Drone created');
+
+        // Create camera controller
+        console.log('5️⃣ Creating CesiumCameraController...');
+        this.cesiumCameraController = new CesiumCameraController(this.cesiumViewer, this.droneEntity);
+        console.log('✅ Camera controller created');
+
+        // Focus camera on flight bounds
+        console.log('📷 Focusing camera on bounds...');
+        await this.cesiumViewer.focusOnBounds(this.flightData.bounds);
+
+        // Create playback controller (adapted for Cesium)
+        console.log('6️⃣ Creating PlaybackController...');
+        this.playbackController = new PlaybackController(
+            this.flightData,
+            this.droneEntity,        // DroneEntity instead of DroneModel
+            this.cesiumCameraController,  // CesiumCameraController instead of CameraController
+            true                     // isCesium flag
+        );
+        console.log('✅ Playback controller created');
+
+        // Create UI components
+        console.log('7️⃣ Creating UI components...');
+        this.telemetry = new Telemetry();
+        this.timeline = new Timeline(this.playbackController);
+        console.log('✅ UI components created');
+
+        // Setup playback callbacks
+        console.log('8️⃣ Setting up callbacks...');
+        this.playbackController.onUpdate((data) => {
+            this.telemetry.update(data.currentPoint, data.nextPoint, data.interpolation);
+            this.timeline.update(data);
+        });
+        console.log('✅ Callbacks set up');
+
+        // Setup Cesium render loop
+        console.log('9️⃣ Setting up Cesium render loop...');
+        const viewer = this.cesiumViewer.getViewer();
+        viewer.scene.preRender.addEventListener(() => {
+            this.playbackController.update();
+        });
+        console.log('✅ Render loop set up');
+
+        // Finish common UI setup
+        this.finishVisualizationSetup();
+
+        // Expose drone entity for debugging
+        window.droneEntity = this.droneEntity;
+        window.cesiumViewer = this.cesiumViewer;
+        console.log('🔧 Debug: window.droneEntity and window.cesiumViewer available');
+
+        console.log('%c✅ Cesium visualization fully initialized!', 'color: green; font-size: 16px; font-weight: bold');
+    }
+
+    /**
+     * Initialize visualization using Three.js (legacy fallback)
+     */
+    async initThreeJsVisualization() {
+        console.log('🎮 Initializing Three.js visualization (legacy)...');
+
+        // Show canvas, hide Cesium container
+        const cesiumContainer = document.getElementById('cesiumContainer');
+        if (cesiumContainer) cesiumContainer.style.display = 'none';
+        if (this.canvas) this.canvas.style.display = 'block';
+
+        // Create scene manager
+        console.log('1️⃣ Creating SceneManager...');
+        this.sceneManager = new SceneManager(this.canvas);
+        console.log('✅ SceneManager created');
+
+        // Create terrain
+        console.log('2️⃣ Creating TerrainLoader...');
+        this.terrainLoader = new TerrainLoader(this.sceneManager, this.flightData.bounds);
+        this.terrainLoader.setStatusCallback((message, details) => {
+            this.updateStatusBar(message, details);
+        });
+        await this.terrainLoader.loadTerrain(this.flightData.bounds);
+        console.log('✅ Terrain loaded');
+
+        // Create trajectory line
+        console.log('3️⃣ Creating TrajectoryLine...');
+        this.trajectoryLine = new TrajectoryLine(this.sceneManager, this.flightData);
+        console.log('✅ Trajectory created');
+
+        // Calculate map scale
+        const mapWidth = Math.max(
+            (this.flightData.bounds.maxLat - this.flightData.bounds.minLat) * 111320,
+            (this.flightData.bounds.maxLon - this.flightData.bounds.minLon) * 111320 * Math.cos((this.flightData.bounds.minLat + this.flightData.bounds.maxLat) / 2 * Math.PI / 180)
+        );
+        const markerScale = Math.max(15, Math.min(1000, mapWidth / 200));
+
+        // Create waypoints if data exists
+        if (this.waypointsData && this.waypointsData.waypoints.length > 0) {
+            console.log('3.5️⃣ Creating WaypointsLine...');
+            const centerLat = (this.flightData.bounds.minLat + this.flightData.bounds.maxLat) / 2;
+            const centerLon = (this.flightData.bounds.minLon + this.flightData.bounds.maxLon) / 2;
+            const groundLevel = this.trajectoryLine ? this.trajectoryLine.groundLevel : 0;
+            const homeAltitudeMSL = this.flightData.points[0]?.gps?.altitude || this.flightData.bounds.minAlt || 0;
+            this.waypointsLine = new WaypointsLine(
+                this.sceneManager, this.waypointsData, centerLat, centerLon,
+                groundLevel, homeAltitudeMSL, markerScale
+            );
+            console.log('✅ Waypoints created');
+        }
+
+        // Create drone model
+        console.log('4️⃣ Creating DroneModel...');
+        this.droneModel = new DroneModel(this.sceneManager);
+        const objectScale = Math.max(5, Math.min(500, mapWidth / 500));
+        const droneSize = Math.max(5, Math.min(50, objectScale / 5));
+        this.droneModel.setScale(droneSize / 2.5);
+        console.log('✅ Drone model created');
+
+        // Create camera controller
+        console.log('5️⃣ Creating CameraController...');
+        this.cameraController = new CameraController(this.sceneManager, this.droneModel);
+        this.sceneManager.focusOnBounds(this.flightData.bounds);
+        console.log('✅ Camera controller created');
+
+        // Create playback controller
+        console.log('6️⃣ Creating PlaybackController...');
+        this.playbackController = new PlaybackController(
+            this.flightData, this.droneModel, this.cameraController, false
+        );
+        console.log('✅ Playback controller created');
+
+        // Create UI components
+        console.log('7️⃣ Creating UI components...');
+        this.telemetry = new Telemetry();
+        this.timeline = new Timeline(this.playbackController);
+
+        // Setup callbacks
+        this.playbackController.onUpdate((data) => {
+            this.telemetry.update(data.currentPoint, data.nextPoint, data.interpolation);
+            this.timeline.update(data);
+        });
+
+        // Setup render loop
+        this.sceneManager.onRender(() => {
+            this.playbackController.update();
+        });
+
+        // Finish common UI setup
+        this.finishVisualizationSetup();
+
+        // Expose for debugging
+        window.droneModel = this.droneModel;
+        console.log('🔧 Debug: window.droneModel available');
+
+        console.log('%c✅ Three.js visualization fully initialized!', 'color: green; font-size: 16px; font-weight: bold');
+    }
+
+    /**
+     * Common UI setup after visualization initialization
+     */
+    finishVisualizationSetup() {
+        // Set timeline duration
+        this.timeline.setDuration(this.flightData.duration);
+
+        // Show UI
+        this.telemetry.show();
+        this.timeline.show();
+
+        // Setup panels
+        this.setupGpsSourcePanel();
+        this.setupVisibilityPanel();
+        this.setupDenisStatsPanel();
+
+        // Show status bar and map controls
+        const statusBar = document.getElementById('statusBar');
+        const mapControls = document.getElementById('mapControls');
+        if (statusBar) statusBar.style.display = 'block';
+        if (mapControls) mapControls.style.display = 'flex';
+
+        // Toggle logos
+        const logoUpload = document.getElementById('logoUpload');
+        const logoViz = document.getElementById('logoViz');
+        if (logoUpload) logoUpload.style.display = 'none';
+        if (logoViz) logoViz.style.display = 'block';
+
+        // Show exit button
+        if (this.exitButton) {
+            this.exitButton.style.display = 'inline-flex';
+        }
+
+        // Initialize drone at first position
+        this.playbackController.seek(0);
+        console.log('✅ Drone positioned at start');
     }
 
     setupGpsSourcePanel() {

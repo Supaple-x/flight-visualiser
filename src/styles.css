@@ -463,10 +463,10 @@ body {
 /* Visibility Controls Panel */
 .visibility-panel {
     position: absolute;
-    top: auto;
-    bottom: 240px;
-    left: 420px; /* Position next to GPS source panel */
-    width: 280px;
+    top: 230px; /* Below logo with margin */
+    left: 20px;
+    bottom: auto;
+    width: 260px;
     z-index: 100;
 }
 
@@ -570,18 +570,20 @@ body {
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    width: 800px;
+    width: auto;
+    max-width: 900px;
     background: rgba(74, 144, 226, 0.25);  /* Голубой полупрозрачный фон как у телеметрии */
     backdrop-filter: blur(10px);
     border: 1px solid rgba(74, 144, 226, 0.5);
     border-radius: 12px;
-    padding: 20px;
+    padding: 15px 20px;
     box-shadow: 0 8px 32px rgba(74, 144, 226, 0.2);
 }
 
 /* Timeline */
 .timeline {
-    margin-bottom: 16px;
+    margin-bottom: 10px;
+    min-width: 500px;
 }
 
 .timeline__slider {
@@ -629,14 +631,24 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 16px;
+    margin-bottom: 0;
 }
 
 /* Camera Controls */
 .camera-controls {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    margin-left: 20px;
+    padding-left: 20px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Combined row for playback and camera controls */
+.controls-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
 }
 
 .camera-controls label {

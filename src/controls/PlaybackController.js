@@ -1,11 +1,13 @@
 /**
  * Playback Controller - Manages flight replay
+ * Supports both Cesium.js and Three.js visualization modes
  */
 export class PlaybackController {
-    constructor(flightData, droneModel, cameraController) {
+    constructor(flightData, droneModel, cameraController, isCesium = false) {
         this.flightData = flightData;
-        this.droneModel = droneModel;
+        this.droneModel = droneModel;  // DroneModel (Three.js) or DroneEntity (Cesium)
         this.cameraController = cameraController;
+        this.isCesium = isCesium;  // True for Cesium, false for Three.js
 
         this.isPlaying = false;
         this.isLooping = false;
@@ -187,20 +189,51 @@ export class PlaybackController {
         const point = this.flightData.points[index];
         const nextPoint = this.flightData.points[nextIndex];
 
-        // Interpolate position
-        const position = this.interpolatePosition(point, nextPoint, t);
-
         // Interpolate attitude
         const attitude = this.interpolateAttitude(point.attitude, nextPoint.attitude, t);
 
-        // Update drone model
-        this.droneModel.update(position, attitude);
+        if (this.isCesium) {
+            // Cesium mode: use GPS coordinates directly
+            const gpsPosition = this.interpolateGpsPosition(point, nextPoint, t);
+
+            // Get next GPS position for heading calculation
+            const nextGpsPosition = (index < this.flightData.points.length - 1)
+                ? this.interpolateGpsPosition(nextPoint, this.flightData.points[Math.min(nextIndex + 1, this.flightData.points.length - 1)], 0)
+                : null;
+
+            // Update drone entity with GPS position
+            this.droneModel.update(gpsPosition, attitude, nextGpsPosition);
+        } else {
+            // Three.js mode: convert to local coordinates
+            const position = this.interpolatePosition(point, nextPoint, t);
+
+            // Get next position for heading calculation
+            const nextPosition = (index < this.flightData.points.length - 1)
+                ? this.interpolatePosition(nextPoint, this.flightData.points[Math.min(nextIndex + 1, this.flightData.points.length - 1)], 0)
+                : null;
+
+            // Update drone model (pass nextPosition for heading calculation)
+            this.droneModel.update(position, attitude, nextPosition);
+        }
 
         // Update camera
-        this.cameraController.update();
+        if (this.cameraController?.update) {
+            this.cameraController.update();
+        }
 
         // Trigger callbacks
         this.notifyUpdate(point, nextPoint, t);
+    }
+
+    /**
+     * Interpolate GPS position (for Cesium mode)
+     */
+    interpolateGpsPosition(point1, point2, t) {
+        return {
+            lat: point1.gps.lat + (point2.gps.lat - point1.gps.lat) * t,
+            lon: point1.gps.lon + (point2.gps.lon - point1.gps.lon) * t,
+            altitude: point1.gps.altitude + (point2.gps.altitude - point1.gps.altitude) * t
+        };
     }
 
     /**

@@ -8,7 +8,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "three": "^0.160.0"
+    "cesium": "^1.137.0",
+    "three": "^0.160.0",
+    "vite-plugin-cesium": "^1.2.23"
   },
   "devDependencies": {
     "vite": "^5.0.0"

@@ -21,6 +21,10 @@ export class DroneModel {
         this.isPlaceholder = true; // Флаг для отслеживания типа модели
         this.loadingFBX = false; // Флаг процесса загрузки
         this.highlightSphere = null; // Голубая подсветка вокруг дрона
+        this.propeller = null; // Ссылка на винт для анимации
+        this.propellerSpeed = 0.5; // Скорость вращения винта (радиан за кадр)
+        this.propellerAxis = 'x'; // Ось вращения винта (x, y, или z) - для хвостового ротора обычно X
+        this.modelRotationOffset = new THREE.Euler(Math.PI / 2, 0, 0); // Смещение ориентации модели: +90° X (нос вперёд по маршруту)
 
         // Создаём голубую прозрачную сферу подсветки
         this.createHighlightSphere();
@@ -183,7 +187,23 @@ export class DroneModel {
                     modelGroup.add(fbx);
 
                     // Применяем масштаб
-                    modelGroup.scale.set(autoScale, autoScale, autoScale);
+                    // Если был установлен кастомный scale через setScale(), используем его
+                    const finalScale = (this.scale && this.scale > 1) ? this.scale : autoScale;
+                    modelGroup.scale.set(finalScale, finalScale, finalScale);
+                    console.log(`  📏 Final model scale: ${finalScale.toFixed(2)} (auto=${autoScale.toFixed(4)}, custom=${this.scale})`);
+
+                    // Обновляем размер сферы подсветки
+                    if (this.highlightSphere) {
+                        const sphereScale = finalScale / autoScale * 2; // пропорционально размеру модели
+                        this.highlightSphere.scale.set(sphereScale, sphereScale, sphereScale);
+                        console.log(`  🔵 Highlight sphere scaled: ${sphereScale.toFixed(2)}`);
+                    }
+
+                    // Обновляем длину осей ориентации
+                    if (this.orientationAxes) {
+                        const axesScale = finalScale * 2;
+                        this.orientationAxes.scale.set(axesScale, axesScale, axesScale);
+                    }
 
                     // Загружаем текстуры вручную из папки /Textures/
                     const textureLoader = new THREE.TextureLoader();
@@ -512,6 +532,9 @@ export class DroneModel {
                     });
                     console.log(`  Geometry: ${meshCount} meshes, ${totalVertices.toLocaleString()} vertices`);
 
+                    // Find propeller for animation
+                    this.findPropeller();
+
                     // Для debug можно раскомментировать:
                     // this.addDebugHelpers();
                     // this.printTextureInfo();
@@ -542,41 +565,65 @@ export class DroneModel {
 
     /**
      * Update drone position and rotation
+     * @param {THREE.Vector3} position - Current position
+     * @param {Object} attitude - Attitude data (roll, pitch, yaw in decidegrees)
+     * @param {THREE.Vector3} nextPosition - Optional next position for heading calculation
      */
-    update(position, attitude) {
+    update(position, attitude, nextPosition = null) {
         if (!this.model) return;
 
         // Update position
         this.currentPosition.copy(position);
         this.model.position.copy(position);
 
-        // Update rotation (convert from INAV degrees to radians)
-        // INAV uses decidegrees (degrees * 10)
-        const roll = (attitude.roll / 10) * (Math.PI / 180);
-        const pitch = (attitude.pitch / 10) * (Math.PI / 180);
-        const yaw = (attitude.yaw / 10) * (Math.PI / 180);
+        let yaw, pitch, roll;
 
-        // Временное логирование для отладки (каждую секунду)
-        if (!this._lastLogTime || Date.now() - this._lastLogTime > 1000) {
-            console.log('🔄 Drone rotation:', {
-                raw: { roll: attitude.roll, pitch: attitude.pitch, yaw: attitude.yaw },
-                degrees: {
-                    roll: (attitude.roll / 10).toFixed(1) + '°',
-                    pitch: (attitude.pitch / 10).toFixed(1) + '°',
-                    yaw: (attitude.yaw / 10).toFixed(1) + '°'
-                },
-                radians: {
-                    roll: roll.toFixed(3),
-                    pitch: pitch.toFixed(3),
-                    yaw: yaw.toFixed(3)
-                }
-            });
-            this._lastLogTime = Date.now();
+        // If we have next position, calculate heading towards it
+        if (nextPosition && !position.equals(nextPosition)) {
+            // Calculate direction vector
+            const direction = new THREE.Vector3().subVectors(nextPosition, position);
+
+            // Calculate yaw (heading) from direction
+            yaw = Math.atan2(direction.x, -direction.z);
+
+            // Calculate pitch from altitude difference
+            const horizontalDist = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
+            pitch = Math.atan2(direction.y, horizontalDist) * 0.3; // Reduce pitch effect
+
+            roll = 0; // No roll for waypoint navigation
+        } else {
+            // Use attitude data (convert from INAV decidegrees to radians)
+            roll = (attitude.roll / 10) * (Math.PI / 180);
+            pitch = (attitude.pitch / 10) * (Math.PI / 180);
+            yaw = (attitude.yaw / 10) * (Math.PI / 180);
         }
 
-        // Apply rotation in ZYX order (yaw, pitch, roll)
-        this.currentRotation.set(pitch, yaw, roll, 'YXZ');
-        this.model.rotation.copy(this.currentRotation);
+        // Apply rotation: first model offset (to orient the model correctly),
+        // then navigation rotation (yaw to face direction)
+        //
+        // Strategy: Apply yaw offset separately, then combine with pitch adjustment
+
+        // Adjust yaw by model's Y offset (model's forward direction relative to nav forward)
+        const yawOffset = this.modelRotationOffset.y;
+        const adjustedYaw = yaw + yawOffset;
+
+        // Create navigation rotation with adjusted yaw
+        const navRotation = new THREE.Euler(pitch, adjustedYaw, roll, 'YXZ');
+        const navQuat = new THREE.Quaternion().setFromEuler(navRotation);
+
+        // Apply X and Z offset separately (model tilt correction)
+        const tiltOffset = new THREE.Euler(this.modelRotationOffset.x, 0, this.modelRotationOffset.z);
+        const tiltQuat = new THREE.Quaternion().setFromEuler(tiltOffset);
+
+        // Combine: first tilt the model, then apply navigation (with yaw offset already included)
+        navQuat.multiply(tiltQuat);
+
+        // Apply combined rotation
+        this.model.quaternion.copy(navQuat);
+        this.currentRotation.setFromQuaternion(navQuat);
+
+        // Animate propeller
+        this.animatePropeller();
 
         // Обновляем позицию голубой сферы подсветки
         if (this.highlightSphere) {
@@ -612,9 +659,141 @@ export class DroneModel {
      */
     setScale(scale) {
         this.scale = scale;
+        console.log(`📏 DroneModel.setScale(${scale.toFixed(2)})`);
         if (this.model) {
             this.model.scale.set(scale, scale, scale);
         }
+        // Также масштабируем сферу подсветки и оси
+        if (this.highlightSphere) {
+            const sphereScale = scale * 0.8;
+            this.highlightSphere.scale.set(sphereScale, sphereScale, sphereScale);
+        }
+        if (this.orientationAxes) {
+            const axesScale = scale * 2;
+            this.orientationAxes.scale.set(axesScale, axesScale, axesScale);
+        }
+    }
+
+    /**
+     * Find and store reference to propeller mesh for animation
+     */
+    findPropeller() {
+        if (!this.model) return;
+
+        // First, list all mesh names for debugging
+        const meshNames = [];
+        this.model.traverse((child) => {
+            if (child.isMesh) {
+                meshNames.push(child.name || 'unnamed');
+            }
+        });
+        console.log('🔍 Model mesh names:', meshNames.join(', '));
+
+        this.model.traverse((child) => {
+            if (child.isMesh) {
+                const name = child.name.toLowerCase();
+                // Look for propeller, rotor, blade, vint, винт in mesh name
+                if (name.includes('propeller') || name.includes('rotor') ||
+                    name.includes('blade') || name.includes('prop') ||
+                    name.includes('vint') || name.includes('винт') || name.includes('лопасть')) {
+                    this.propeller = child;
+                    console.log(`🚁 Found propeller: "${child.name}"`);
+                }
+            }
+        });
+
+        // If not found by name, try to find by geometry (small cylindrical objects)
+        if (!this.propeller) {
+            this.model.traverse((child) => {
+                if (child.isMesh && child.geometry) {
+                    const box = new THREE.Box3().setFromObject(child);
+                    const size = box.getSize(new THREE.Vector3());
+                    // Propeller is typically flat (one dimension much smaller)
+                    const minDim = Math.min(size.x, size.y, size.z);
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    if (minDim < maxDim * 0.1 && !this.propeller) {
+                        // Check if it's positioned at the tail (negative Z in local coords)
+                        if (child.position.z < -0.3 || child.name.toLowerCase().includes('tail')) {
+                            this.propeller = child;
+                            console.log(`🚁 Found propeller by shape: "${child.name}"`);
+                        }
+                    }
+                }
+            });
+        }
+
+        if (!this.propeller) {
+            console.log('⚠️ Propeller not found in model. Use droneModel.setPropellerByName("meshName") to set manually.');
+        }
+    }
+
+    /**
+     * Manually set propeller by mesh name
+     * @param {string} meshName - Name of the mesh to use as propeller
+     */
+    setPropellerByName(meshName) {
+        if (!this.model) return;
+
+        this.model.traverse((child) => {
+            if (child.isMesh && child.name === meshName) {
+                this.propeller = child;
+                console.log(`🚁 Propeller manually set: "${child.name}"`);
+            }
+        });
+    }
+
+    /**
+     * Animate propeller rotation
+     */
+    animatePropeller() {
+        if (this.propeller) {
+            // Rotate around the configured axis
+            switch (this.propellerAxis) {
+                case 'x':
+                    this.propeller.rotation.x += this.propellerSpeed;
+                    break;
+                case 'y':
+                    this.propeller.rotation.y += this.propellerSpeed;
+                    break;
+                case 'z':
+                default:
+                    this.propeller.rotation.z += this.propellerSpeed;
+                    break;
+            }
+        }
+    }
+
+    /**
+     * Set propeller rotation axis
+     * @param {string} axis - 'x', 'y', or 'z'
+     */
+    setPropellerAxis(axis) {
+        this.propellerAxis = axis;
+        console.log(`🚁 Propeller axis set to: ${axis}`);
+    }
+
+    /**
+     * Set propeller animation speed
+     * @param {number} speed - Rotation speed in radians per frame
+     */
+    setPropellerSpeed(speed) {
+        this.propellerSpeed = speed;
+        console.log(`🚁 Propeller speed set to: ${speed}`);
+    }
+
+    /**
+     * Set model rotation offset (to correct model's default orientation)
+     * @param {number} x - X rotation in degrees
+     * @param {number} y - Y rotation in degrees
+     * @param {number} z - Z rotation in degrees
+     */
+    setModelRotationOffset(x, y, z) {
+        this.modelRotationOffset.set(
+            x * Math.PI / 180,
+            y * Math.PI / 180,
+            z * Math.PI / 180
+        );
+        console.log(`📐 Model rotation offset set to: (${x}°, ${y}°, ${z}°)`);
     }
 
     /**

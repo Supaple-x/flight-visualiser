@@ -32,12 +32,12 @@ export class TrajectoryLine {
         // DEBUG: Log trajectory bounds and center
         console.log('🔍 Trajectory Bounds:', {
             bounds: {
-                lat: `${bounds.minLat.toFixed(6)} to ${bounds.maxLat.toFixed(6)}`,
-                lon: `${bounds.minLon.toFixed(6)} to ${bounds.maxLon.toFixed(6)}`
+                lat: `${bounds.minLat?.toFixed(6) || 'N/A'} to ${bounds.maxLat?.toFixed(6) || 'N/A'}`,
+                lon: `${bounds.minLon?.toFixed(6) || 'N/A'} to ${bounds.maxLon?.toFixed(6) || 'N/A'}`
             },
             center: {
-                lat: this.centerLat.toFixed(6),
-                lon: this.centerLon.toFixed(6)
+                lat: this.centerLat?.toFixed(6) || 'N/A',
+                lon: this.centerLon?.toFixed(6) || 'N/A'
             },
             firstPoint: this.flightData.points[0]?.gps
         });
@@ -62,11 +62,11 @@ export class TrajectoryLine {
         this.groundLevel = groundPosition.y;
 
         console.log('🔍 Trajectory altitude range:', {
-            minAlt: minAlt.toFixed(2),
-            maxAlt: maxAlt.toFixed(2),
-            groundLevel: this.groundLevel.toFixed(2),
-            firstPointAlt: this.flightData.points[0]?.gps?.altitude.toFixed(2),
-            lastPointAlt: this.flightData.points[this.flightData.points.length - 1]?.gps?.altitude.toFixed(2)
+            minAlt: minAlt?.toFixed(2) || 'N/A',
+            maxAlt: maxAlt?.toFixed(2) || 'N/A',
+            groundLevel: this.groundLevel?.toFixed(2) || 'N/A',
+            firstPointAlt: this.flightData.points[0]?.gps?.altitude?.toFixed(2) || 'N/A',
+            lastPointAlt: this.flightData.points[this.flightData.points.length - 1]?.gps?.altitude?.toFixed(2) || 'N/A'
         });
 
         for (const point of this.flightData.points) {
