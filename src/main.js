@@ -9,6 +9,7 @@ import { MissionPlannerParser } from './parsers/missionPlannerParser.js';
 import { WaypointsParser } from './parsers/waypointsParser.js';
 import { DenisLogParser } from './parsers/denisLogParser.js';
 import { MigachevParser } from './parsers/migachevParser.js';
+import { MissionWaypointsParser } from './parsers/missionWaypointsParser.js';
 
 // Cesium.js imports (new high-quality terrain visualization)
 import { CesiumViewer } from './cesium/CesiumViewer.js';
@@ -48,6 +49,7 @@ class FlightVisualizerApp {
         // State
         this.flightData = null;
         this.waypointsData = null;
+        this.missionEvents = null;  // SERVO, CAMERA events
         this.useCesium = USE_CESIUM;
 
         // Cesium components (new)
@@ -805,7 +807,7 @@ class FlightVisualizerApp {
                 return;
             }
 
-            console.log(`%c📥 Loading Мигачев_1 files:`, 'color: blue; font-weight: bold');
+            console.log(`%c📥 Loading mission file:`, 'color: blue; font-weight: bold');
             console.log('  File:', this.selectedMigachevFile.name, `(${(this.selectedMigachevFile.size / 1024).toFixed(2)} KB)`);
 
             // Show progress
@@ -816,39 +818,108 @@ class FlightVisualizerApp {
             }
             this.progressContainer.style.display = 'block';
 
-            // Parse waypoints file
-            console.log('🔍 Parsing Мигачев_1 waypoints file...');
+            // Detect file format by reading first line
+            const fileContent = await this.selectedMigachevFile.text();
+            const firstLine = fileContent.trim().split('\n')[0];
+            const isQGCFormat = firstLine.startsWith('QGC WPL');
+
+            console.log(`🔍 Detected format: ${isQGCFormat ? 'QGC WPL (Mission Planner)' : 'Migachev custom'}`);
             this.updateProgress(30, 'Парсинг файла маршрута...');
 
-            const parser = new MigachevParser();
-            this.waypointsData = await parser.parse(this.selectedMigachevFile);
+            let missionData;
 
-            console.log('%c✅ Waypoints parsed successfully!', 'color: green; font-weight: bold');
-            console.log('📊 Waypoints data:', {
-                waypoints: this.waypointsData.waypoints.length,
-                allWaypoints: this.waypointsData.allWaypoints.length,
-                bounds: this.waypointsData.bounds,
-                homeAltitude: this.waypointsData.homeAltitude
-            });
+            if (isQGCFormat) {
+                // Use new Mission Planner parser with LOITER support
+                console.log('🔍 Using MissionWaypointsParser (with LOITER_TURNS support)...');
+                const parser = new MissionWaypointsParser();
 
-            // Create pseudo flight data from waypoints for visualization compatibility
-            if (this.waypointsData.waypoints.length > 0 && this.waypointsData.bounds) {
-                this.updateProgress(60, 'Подготовка визуализации...');
+                // Create a new File object from the content we already read
+                const file = new File([fileContent], this.selectedMigachevFile.name);
+                missionData = await parser.parse(file);
 
-                // Validate bounds
-                const bounds = this.waypointsData.bounds;
-                if (!isFinite(bounds.minLat) || !isFinite(bounds.maxLat) ||
-                    !isFinite(bounds.minLon) || !isFinite(bounds.maxLon)) {
-                    throw new Error('Некорректные координаты в файле маршрута');
-                }
+                console.log('%c✅ Mission parsed successfully!', 'color: green; font-weight: bold');
+                console.log('📊 Mission data:', {
+                    commands: missionData.waypoints.length,
+                    flightPoints: missionData.flightPath.length,
+                    events: missionData.events.length,
+                    totalDistance: (missionData.totalDistance / 1000).toFixed(2) + ' km',
+                    totalTime: parser.formatTime(missionData.totalTime),
+                    bounds: missionData.bounds
+                });
 
-                // Calculate distances and estimated speeds between waypoints
+                // Store events for visualization
+                this.missionEvents = missionData.events;
+
+                // Store waypoints for visualization (original commands)
+                this.waypointsData = {
+                    waypoints: missionData.waypoints.filter(wp =>
+                        wp.lat !== 0 || wp.lon !== 0
+                    ).map(wp => ({
+                        index: wp.index,
+                        lat: wp.lat,
+                        lon: wp.lon,
+                        alt: wp.alt,
+                        altAbsolute: wp.frame === 3 ? (missionData.homePosition?.alt || 0) + wp.alt : wp.alt,
+                        command: wp.commandName,
+                        params: wp.params
+                    })),
+                    bounds: missionData.bounds,
+                    homeAltitude: missionData.homePosition?.alt || 0,
+                    allWaypoints: missionData.waypoints
+                };
+
+                // Create flight data from generated flight path
+                const flightPoints = missionData.flightPath.map((point, index) => ({
+                    time: point.time,
+                    gps: {
+                        lat: point.lat,
+                        lon: point.lon,
+                        altitude: point.altAbsolute || point.alt,
+                        speed: point.speed,
+                        numSat: 0
+                    },
+                    attitude: {
+                        roll: 0,
+                        pitch: 0,
+                        yaw: 0
+                    },
+                    command: point.command,
+                    waypointIndex: point.waypointIndex,
+                    loiterTurn: point.loiterTurn,
+                    loiterProgress: point.loiterProgress
+                }));
+
+                this.flightData = {
+                    points: flightPoints,
+                    duration: missionData.totalTime,
+                    bounds: missionData.bounds,
+                    source: 'Mission Planner',
+                    events: missionData.events,
+                    totalDistance: missionData.totalDistance
+                };
+
+            } else {
+                // Use original Migachev parser
+                console.log('🔍 Using MigachevParser...');
+                const parser = new MigachevParser();
+
+                // Create a new File object from the content
+                const file = new File([fileContent], this.selectedMigachevFile.name);
+                this.waypointsData = await parser.parse(file);
+
+                console.log('%c✅ Waypoints parsed successfully!', 'color: green; font-weight: bold');
+                console.log('📊 Waypoints data:', {
+                    waypoints: this.waypointsData.waypoints.length,
+                    bounds: this.waypointsData.bounds,
+                    homeAltitude: this.waypointsData.homeAltitude
+                });
+
+                // Create flight data from waypoints (old logic)
                 const waypoints = this.waypointsData.waypoints;
-                const ASSUMED_CRUISE_SPEED = 15; // m/s - assumed cruise speed for estimation
+                const ASSUMED_CRUISE_SPEED = 15;
 
-                // Haversine formula to calculate distance between two GPS points
                 const calculateDistance = (lat1, lon1, lat2, lon2) => {
-                    const R = 6371000; // Earth radius in meters
+                    const R = 6371000;
                     const dLat = (lat2 - lat1) * Math.PI / 180;
                     const dLon = (lon2 - lon1) * Math.PI / 180;
                     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -858,18 +929,10 @@ class FlightVisualizerApp {
                     return R * c;
                 };
 
-                // Create flight points from waypoints with calculated speeds
                 const flightPoints = waypoints.map((wp, index) => {
                     let estimatedSpeed = 0;
-                    let distanceToNext = 0;
-
-                    // Calculate distance to next waypoint
                     if (index < waypoints.length - 1) {
-                        const nextWp = waypoints[index + 1];
-                        const horizontalDist = calculateDistance(wp.lat, wp.lon, nextWp.lat, nextWp.lon);
-                        const altDiff = Math.abs((nextWp.altAbsolute || nextWp.alt || 0) - (wp.altAbsolute || wp.alt || 0));
-                        distanceToNext = Math.sqrt(horizontalDist * horizontalDist + altDiff * altDiff);
-                        estimatedSpeed = ASSUMED_CRUISE_SPEED; // Use assumed cruise speed
+                        estimatedSpeed = ASSUMED_CRUISE_SPEED;
                     }
 
                     return {
@@ -879,19 +942,14 @@ class FlightVisualizerApp {
                             lon: wp.lon,
                             altitude: wp.altAbsolute || wp.alt || 0,
                             speed: estimatedSpeed,
-                            speedEstimated: true, // Flag for telemetry to show as "Расчетная"
-                            distanceToNext: distanceToNext,
+                            speedEstimated: true,
                             numSat: 0
                         },
-                        attitude: {
-                            roll: 0,
-                            pitch: 0,
-                            yaw: 0
-                        }
+                        attitude: { roll: 0, pitch: 0, yaw: 0 }
                     };
                 });
 
-                // Ensure altitude bounds are valid
+                const bounds = this.waypointsData.bounds;
                 if (!isFinite(bounds.minAlt)) bounds.minAlt = 0;
                 if (!isFinite(bounds.maxAlt)) bounds.maxAlt = 500;
 
@@ -901,15 +959,13 @@ class FlightVisualizerApp {
                     bounds: bounds,
                     source: 'migachev'
                 };
-
-                console.log('📊 Created pseudo flight data:', {
-                    points: this.flightData.points.length,
-                    duration: this.flightData.duration,
-                    bounds: this.flightData.bounds
-                });
-            } else {
-                throw new Error('Файл не содержит навигационных точек или некорректный формат');
             }
+
+            console.log('📊 Flight data created:', {
+                points: this.flightData.points.length,
+                duration: this.flightData.duration.toFixed(1) + 's',
+                bounds: this.flightData.bounds
+            });
 
             // Initialize 3D visualization
             this.updateProgress(100, 'Инициализация 3D сцены...');
@@ -921,12 +977,12 @@ class FlightVisualizerApp {
             this.dropZone.style.display = 'none';
             this.canvasContainer.style.display = 'block';
 
-            console.log('%c🎉 Мигачев_1 visualization loaded!', 'color: green; font-size: 18px; font-weight: bold');
+            console.log('%c🎉 Mission visualization loaded!', 'color: green; font-size: 18px; font-weight: bold');
 
         } catch (error) {
-            console.error('%c❌ Error loading Мигачев_1 files:', 'color: red; font-weight: bold', error);
+            console.error('%c❌ Error loading mission file:', 'color: red; font-weight: bold', error);
             console.error('Stack trace:', error.stack);
-            alert(`Ошибка загрузки файла Мигачев_1: ${error.message}`);
+            alert(`Ошибка загрузки файла: ${error.message}`);
 
             // Reset UI
             document.body.style.cursor = 'default';
@@ -1001,7 +1057,9 @@ class FlightVisualizerApp {
         if (this.waypointsData && this.waypointsData.waypoints.length > 0) {
             console.log('3️⃣ Creating WaypointsEntity...');
             this.waypointsEntity = new WaypointsEntity(this.cesiumViewer);
-            this.waypointsEntity.create(this.waypointsData);
+            // Pass events for visualization (SERVO, CAMERA markers)
+            const events = this.flightData?.events || this.missionEvents || null;
+            this.waypointsEntity.create(this.waypointsData, events);
             console.log('✅ Waypoints created');
         }
 
