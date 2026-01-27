@@ -1047,10 +1047,11 @@ class FlightVisualizerApp {
         await new Promise(resolve => setTimeout(resolve, 1000));
         console.log('✅ CesiumViewer created with World Terrain');
 
-        // Create trajectory entity
+        // Create trajectory entity (with terrain height sampling)
         console.log('2️⃣ Creating TrajectoryEntity...');
         this.trajectoryEntity = new TrajectoryEntity(this.cesiumViewer);
-        this.trajectoryEntity.create(this.flightData);
+        await this.trajectoryEntity.create(this.flightData);
+        const terrainHeight = this.trajectoryEntity.getTerrainHeight();
         console.log('✅ Trajectory created');
 
         // Create waypoints entity if data exists
@@ -1059,7 +1060,7 @@ class FlightVisualizerApp {
             this.waypointsEntity = new WaypointsEntity(this.cesiumViewer);
             // Pass events for visualization (SERVO, CAMERA markers)
             const events = this.flightData?.events || this.missionEvents || null;
-            this.waypointsEntity.create(this.waypointsData, events);
+            this.waypointsEntity.create(this.waypointsData, events, terrainHeight);
             console.log('✅ Waypoints created');
         }
 
@@ -1077,6 +1078,9 @@ class FlightVisualizerApp {
         // Focus camera on flight bounds
         console.log('📷 Focusing camera on bounds...');
         await this.cesiumViewer.focusOnBounds(this.flightData.bounds);
+
+        // Store terrain height in flight data for playback
+        this.flightData.terrainHeight = terrainHeight;
 
         // Create playback controller (adapted for Cesium)
         console.log('6️⃣ Creating PlaybackController...');

@@ -189,22 +189,46 @@ export class MissionWaypointsParser {
     generateFlightPath() {
         let currentPosition = { ...this.homePosition };
         let currentTime = 0;
+        let isFirstPoint = true;
 
-        // Start at home
-        this.flightPath.push({
-            lat: currentPosition.lat,
-            lon: currentPosition.lon,
-            alt: currentPosition.alt,
-            altAbsolute: currentPosition.alt,
-            time: currentTime,
-            speed: 0,
-            command: 'HOME',
-            waypointIndex: 0
-        });
+        // Don't add HOME if coordinates are (0, 0) - will start from first real waypoint
+        const hasValidHome = this.homePosition.lat !== 0 || this.homePosition.lon !== 0;
+
+        if (hasValidHome) {
+            // Start at home
+            this.flightPath.push({
+                lat: currentPosition.lat,
+                lon: currentPosition.lon,
+                alt: currentPosition.alt,
+                altAbsolute: currentPosition.alt,
+                time: currentTime,
+                speed: 0,
+                command: 'HOME',
+                waypointIndex: 0
+            });
+            isFirstPoint = false;
+        }
 
         for (const wp of this.waypoints) {
-            // Skip HOME (already added)
+            // Skip HOME (index 0) - already processed or invalid
             if (wp.index === 0) continue;
+
+            // Skip waypoints without coordinates (servo commands, etc.)
+            if (wp.lat === 0 && wp.lon === 0 &&
+                wp.command !== MAV_CMD.DO_SET_SERVO &&
+                wp.command !== MAV_CMD.DO_SET_CAM_TRIGG_DIST) {
+                continue;
+            }
+
+            // If this is first real point, update currentPosition
+            if (isFirstPoint && (wp.lat !== 0 || wp.lon !== 0)) {
+                currentPosition = {
+                    lat: wp.lat,
+                    lon: wp.lon,
+                    alt: this.getAbsoluteAltitude(wp)
+                };
+                isFirstPoint = false;
+            }
 
             switch (wp.command) {
                 case MAV_CMD.NAV_TAKEOFF:

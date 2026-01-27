@@ -16,7 +16,7 @@ export class TrajectoryEntity {
      * Create trajectory from flight data
      * @param {Object} flightData - Parsed flight data with points array
      */
-    create(flightData) {
+    async create(flightData) {
         if (!this.viewer || !flightData?.points?.length) return;
 
         // Remove existing trajectory
@@ -24,15 +24,42 @@ export class TrajectoryEntity {
 
         const points = flightData.points;
 
-        // Create positions array
+        // Get first point to sample terrain height
+        const firstPoint = points[0].gps || points[0];
+        const firstLat = firstPoint.lat || firstPoint.latitude;
+        const firstLon = firstPoint.lon || firstPoint.longitude;
+
+        // Sample terrain height at first point
+        let terrainHeight = 0;
+        try {
+            const terrainProvider = this.viewer.terrainProvider;
+            if (terrainProvider) {
+                const positions = [Cesium.Cartographic.fromDegrees(firstLon, firstLat)];
+                const sampledPositions = await Cesium.sampleTerrainMostDetailed(terrainProvider, positions);
+                if (sampledPositions && sampledPositions[0]) {
+                    terrainHeight = sampledPositions[0].height || 0;
+                    console.log(`Terrain height at start: ${terrainHeight.toFixed(1)}m`);
+                }
+            }
+        } catch (error) {
+            console.warn('Could not sample terrain height:', error);
+        }
+
+        // Create positions array with terrain offset
         const positions = points.map(point => {
             const gps = point.gps || point;
+            const relativeAlt = gps.altitude || gps.alt || 0;
+            // Add terrain height to relative altitude
+            const absoluteAlt = relativeAlt + terrainHeight;
             return Cesium.Cartesian3.fromDegrees(
                 gps.lon || gps.longitude,
                 gps.lat || gps.latitude,
-                gps.altitude || gps.alt || 0
+                absoluteAlt
             );
         });
+
+        // Store terrain height for drone positioning
+        this.terrainHeight = terrainHeight;
 
         // Create color gradient (Yellow -> Red) based on time/progress
         const colors = this.createGradientColors(points.length);
@@ -41,7 +68,14 @@ export class TrajectoryEntity {
         // For gradient effect, we create multiple segments
         this.createGradientPolyline(positions, colors);
 
-        console.log(`TrajectoryEntity created with ${points.length} points`);
+        console.log(`TrajectoryEntity created with ${points.length} points (terrain offset: ${terrainHeight.toFixed(1)}m)`);
+    }
+
+    /**
+     * Get terrain height offset
+     */
+    getTerrainHeight() {
+        return this.terrainHeight || 0;
     }
 
     /**

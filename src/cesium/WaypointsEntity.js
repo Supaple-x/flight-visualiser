@@ -19,12 +19,16 @@ export class WaypointsEntity {
      * Create waypoints from mission data
      * @param {Object} waypointsData - Parsed waypoints data
      * @param {Array} events - Optional mission events (SERVO, CAMERA)
+     * @param {number} terrainHeight - Terrain height offset from trajectory sampling
      */
-    create(waypointsData, events = null) {
+    create(waypointsData, events = null, terrainHeight = 0) {
         if (!this.viewer || !waypointsData?.waypoints?.length) return;
 
         // Remove existing waypoints
         this.dispose();
+
+        // Store terrain height for all altitude calculations
+        this.terrainHeight = terrainHeight;
 
         const waypoints = waypointsData.waypoints;
         const homeAlt = waypointsData.homeAltitude || waypoints[0]?.alt || 0;
@@ -36,8 +40,10 @@ export class WaypointsEntity {
         );
 
         const positions = navWaypoints.map((wp, index) => {
-            const altitude = wp.altAbsolute || (index === 0 ? wp.alt : (wp.alt + homeAlt));
-            return Cesium.Cartesian3.fromDegrees(wp.lon, wp.lat, altitude);
+            const relativeAlt = wp.altAbsolute || (index === 0 ? wp.alt : (wp.alt + homeAlt));
+            // Add terrain height offset
+            const absoluteAlt = relativeAlt + terrainHeight;
+            return Cesium.Cartesian3.fromDegrees(wp.lon, wp.lat, absoluteAlt);
         });
 
         // Create dashed line connecting waypoints
@@ -46,17 +52,17 @@ export class WaypointsEntity {
         }
 
         // Create markers with numbers and command info
-        this.createWaypointMarkers(navWaypoints, homeAlt);
+        this.createWaypointMarkers(navWaypoints, homeAlt, terrainHeight);
 
         // Create LOITER circles
-        this.createLoiterCircles(waypoints, homeAlt);
+        this.createLoiterCircles(waypoints, homeAlt, terrainHeight);
 
         // Create event markers (SERVO, CAMERA)
         if (events && events.length > 0) {
-            this.createEventMarkers(events);
+            this.createEventMarkers(events, terrainHeight);
         }
 
-        console.log(`WaypointsEntity created with ${navWaypoints.length} waypoints, ${this.loiterCircleEntities.length} loiter circles, ${this.eventEntities.length} events`);
+        console.log(`WaypointsEntity created with ${navWaypoints.length} waypoints, ${this.loiterCircleEntities.length} loiter circles, ${this.eventEntities.length} events (terrain: ${terrainHeight.toFixed(1)}m)`);
     }
 
     /**
@@ -94,10 +100,12 @@ export class WaypointsEntity {
      * Create waypoint markers with labels
      * @param {Array} waypoints
      * @param {number} homeAlt
+     * @param {number} terrainHeight
      */
-    createWaypointMarkers(waypoints, homeAlt) {
+    createWaypointMarkers(waypoints, homeAlt, terrainHeight = 0) {
         waypoints.forEach((wp, index) => {
-            const altitude = wp.altAbsolute || (index === 0 ? wp.alt : (wp.alt + homeAlt));
+            const relativeAlt = wp.altAbsolute || (index === 0 ? wp.alt : (wp.alt + homeAlt));
+            const altitude = relativeAlt + terrainHeight;
             const position = Cesium.Cartesian3.fromDegrees(wp.lon, wp.lat, altitude);
 
             // Calculate color for gradient (Purple to Cyan) with transparency
@@ -145,14 +153,16 @@ export class WaypointsEntity {
      * Create LOITER circles visualization
      * @param {Array} waypoints - All waypoints including LOITER_TURNS
      * @param {number} homeAlt
+     * @param {number} terrainHeight
      */
-    createLoiterCircles(waypoints, homeAlt) {
+    createLoiterCircles(waypoints, homeAlt, terrainHeight = 0) {
         const loiterWaypoints = waypoints.filter(wp =>
             wp.command === 'LOITER_TURNS' && wp.params?.p3 > 0
         );
 
         loiterWaypoints.forEach(wp => {
-            const altitude = wp.altAbsolute || (wp.alt + homeAlt);
+            const relativeAlt = wp.altAbsolute || (wp.alt + homeAlt);
+            const altitude = relativeAlt + terrainHeight;
             const radius = wp.params.p3; // Radius in meters
             const turns = wp.params.p1;
             const centerLat = wp.lat;
@@ -213,10 +223,12 @@ export class WaypointsEntity {
     /**
      * Create event markers (SERVO, CAMERA triggers)
      * @param {Array} events
+     * @param {number} terrainHeight
      */
-    createEventMarkers(events) {
+    createEventMarkers(events, terrainHeight = 0) {
         events.forEach((event, index) => {
-            const position = Cesium.Cartesian3.fromDegrees(event.lon, event.lat, event.alt || 100);
+            const altitude = (event.alt || 100) + terrainHeight;
+            const position = Cesium.Cartesian3.fromDegrees(event.lon, event.lat, altitude);
 
             let markerColor, markerText, iconText;
 

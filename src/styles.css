@@ -29,9 +29,9 @@ body {
     transform: translate(-50%, -50%);
     width: 500px;
     max-width: 90vw;
-    min-height: 520px; /* Фиксированная минимальная высота */
-    padding: 0px 40px 60px 40px; /* Убрали верхний padding, добавили для вкладок */
-    margin-top: 100px; /* Увеличен отступ, чтобы не залезать на логотип и надпись */
+    min-height: 440px; /* Уменьшена высота (подрезано снизу) */
+    padding: 0px 40px 40px 40px; /* Уменьшен нижний padding */
+    margin-top: 125px; /* Отступ от логотипа */
     border: 3px dashed #4a90e2;
     border-radius: 12px;
     background: rgba(74, 144, 226, 0.05);
@@ -105,7 +105,7 @@ body {
 }
 
 .drop-zone__content {
-    padding-top: 40px;
+    padding-top: 25px;
 }
 
 /* Tab Content */
@@ -126,7 +126,7 @@ body {
 
 /* File Upload Groups */
 .file-upload-group {
-    margin: 15px 0;
+    margin: 10px 0;
 }
 
 .file-label {
@@ -156,6 +156,10 @@ body {
     font-size: 12px;
     color: #a0a0a0;
     font-family: 'Courier New', monospace;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .file-label__status.file-selected {
@@ -163,7 +167,7 @@ body {
 }
 
 .upload-hint {
-    margin-top: 15px;
+    margin-top: 10px;
     color: #a0a0a0;
     font-size: 13px;
 }
