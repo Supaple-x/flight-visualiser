@@ -35,6 +35,7 @@
                 <button class="log-tab" data-tab="ardupilot">Ardupilot</button>
                 <button class="log-tab" data-tab="ud">ЮД</button>
                 <button class="log-tab" data-tab="migachev">Мигачев_1</button>
+                <button class="log-tab" data-tab="osd">OSD Telemetry</button>
             </div>
 
             <div class="drop-zone__content">
@@ -128,6 +129,29 @@
 
                     <p class="upload-hint">или перетащите файл сюда</p>
                     <button id="loadButtonMigachev" class="btn btn--primary" style="display: none; margin-top: 10px;">Загрузить</button>
+                </div>
+
+                <!-- OSD Telemetry Tab Content -->
+                <div id="osdTabContent" class="tab-content">
+                    <h2>Загрузка OSD Telemetry</h2>
+
+                    <!-- CSV File -->
+                    <div class="file-upload-group">
+                        <label for="osdFileInput" class="file-label">
+                            <span class="file-label__text">CSV файл (.csv)</span>
+                            <span class="file-label__status" id="osdFileStatus">Не выбран</span>
+                        </label>
+                        <input type="file" id="osdFileInput" accept=".csv" hidden>
+                    </div>
+
+                    <!-- Smoothing option -->
+                    <label class="osd-option">
+                        <input type="checkbox" id="osdSmoothCheckbox" checked>
+                        <span>Сгладить артефакты (выбросы высоты/координат)</span>
+                    </label>
+
+                    <p class="upload-hint">или перетащите файл сюда</p>
+                    <button id="loadButtonOsd" class="btn btn--primary" style="display: none; margin-top: 10px;">Загрузить</button>
                 </div>
             </div>
 
@@ -363,6 +387,27 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Zoom & Center Controls (top-right) -->
+        <div id="zoomControls" class="zoom-controls-panel" style="display: none;">
+            <button id="zoomInBtn" class="zoom-btn" title="Приблизить">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button id="zoomOutBtn" class="zoom-btn" title="Отдалить">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button id="centerOnFlightBtn" class="zoom-btn" title="Центрировать на маршруте">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path>
+                </svg>
+            </button>
         </div>
 
         <!-- Status Bar -->

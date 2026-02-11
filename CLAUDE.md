@@ -199,3 +199,8 @@ index current frame command p1 p2 p3 p4 lat lon alt autocontinue
 - Group policy may block npm/vite execution on some systems
 - Large files (300MB+) may cause browser slowdown during parsing
 - Line width rendering varies across browsers (WebGL limitation)
+
+## Development Rules
+
+### Documentation Lookup
+**Always use Context7 MCP tool** when working with external libraries (Cesium.js, Three.js, Vite, etc.) to fetch up-to-date documentation. This ensures you're using current API methods and avoiding deprecated features.

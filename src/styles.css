@@ -27,7 +27,7 @@ body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 500px;
+    width: 620px;
     max-width: 90vw;
     min-height: 440px; /* Уменьшена высота (подрезано снизу) */
     padding: 0px 40px 40px 40px; /* Уменьшен нижний padding */
@@ -170,6 +170,23 @@ body {
     margin-top: 10px;
     color: #a0a0a0;
     font-size: 13px;
+}
+
+.osd-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #c0c0c0;
+    cursor: pointer;
+}
+
+.osd-option input[type="checkbox"] {
+    accent-color: #4a90e2;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
 }
 
 .drop-zone__progress {
@@ -548,6 +565,41 @@ body {
     box-shadow: 0 8px 32px rgba(74, 144, 226, 0.2);
     backdrop-filter: blur(10px);
     z-index: 150;
+}
+
+/* Zoom & Center Controls (top-right) */
+.zoom-controls-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 150;
+}
+
+.zoom-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 14, 39, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    backdrop-filter: blur(10px);
+}
+
+.zoom-btn:hover {
+    background: rgba(74, 144, 226, 0.4);
+    border-color: rgba(74, 144, 226, 0.6);
+}
+
+.zoom-btn:active {
+    background: rgba(74, 144, 226, 0.6);
 }
 
 .btn--small {

@@ -10,6 +10,7 @@ import { WaypointsParser } from './parsers/waypointsParser.js';
 import { DenisLogParser } from './parsers/denisLogParser.js';
 import { MigachevParser } from './parsers/migachevParser.js';
 import { MissionWaypointsParser } from './parsers/missionWaypointsParser.js';
+import { OsdTelemetryParser } from './parsers/osdTelemetryParser.js';
 
 // Cesium.js imports (new high-quality terrain visualization)
 import { CesiumViewer } from './cesium/CesiumViewer.js';
@@ -97,6 +98,11 @@ class FlightVisualizerApp {
         this.migachevFileStatus = document.getElementById('migachevFileStatus');
         this.loadButtonMigachev = document.getElementById('loadButtonMigachev');
 
+        // OSD Telemetry UI elements
+        this.osdFileInput = document.getElementById('osdFileInput');
+        this.osdFileStatus = document.getElementById('osdFileStatus');
+        this.loadButtonOsd = document.getElementById('loadButtonOsd');
+
         this.canvasContainer = document.getElementById('canvas-container');
         this.canvas = document.getElementById('scene');
         this.progressBar = document.getElementById('progressBar');
@@ -111,6 +117,7 @@ class FlightVisualizerApp {
         this.selectedWaypointsFile = null;
         this.selectedDatFile = null;
         this.selectedMigachevFile = null;
+        this.selectedOsdFile = null;
 
         // Active tab state
         this.activeTab = 'inav';
@@ -143,7 +150,8 @@ class FlightVisualizerApp {
             'inav': document.getElementById('inavTabContent'),
             'ardupilot': document.getElementById('ardupilotTabContent'),
             'ud': document.getElementById('udTabContent'),
-            'migachev': document.getElementById('migachevTabContent')
+            'migachev': document.getElementById('migachevTabContent'),
+            'osd': document.getElementById('osdTabContent')
         };
 
         tabs.forEach(tab => {
@@ -309,6 +317,31 @@ class FlightVisualizerApp {
             this.loadFilesMigachev();
         });
 
+        // ===== OSD Telemetry file inputs =====
+
+        // OSD file input
+        const osdFileLabel = this.osdFileInput?.closest('.file-label');
+        osdFileLabel?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.osdFileInput.click();
+        });
+
+        this.osdFileInput?.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('📄 OSD CSV file selected:', file.name);
+                this.selectedOsdFile = file;
+                this.osdFileStatus.textContent = file.name;
+                this.osdFileStatus.classList.add('file-selected');
+                this.updateLoadButtonOsd();
+            }
+        });
+
+        // Load button for OSD
+        this.loadButtonOsd?.addEventListener('click', () => {
+            this.loadFilesOsd();
+        });
+
         // Drag and drop for entire drop zone
         this.dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -379,6 +412,14 @@ class FlightVisualizerApp {
             this.loadButtonMigachev.style.display = 'block';
         } else {
             this.loadButtonMigachev.style.display = 'none';
+        }
+    }
+
+    updateLoadButtonOsd() {
+        if (this.selectedOsdFile) {
+            this.loadButtonOsd.style.display = 'block';
+        } else {
+            this.loadButtonOsd.style.display = 'none';
         }
     }
 
@@ -502,6 +543,12 @@ class FlightVisualizerApp {
             visibilityPanel.style.display = 'none';
         }
 
+        // Hide zoom controls
+        const zoomControls = document.getElementById('zoomControls');
+        if (zoomControls) {
+            zoomControls.style.display = 'none';
+        }
+
         // Show drop zone
         this.dropZone.style.display = 'block';
         this.dropZone.querySelector('.drop-zone__content').style.display = 'block';
@@ -555,6 +602,13 @@ class FlightVisualizerApp {
         if (this.migachevFileStatus) this.migachevFileStatus.textContent = 'Не выбран';
         if (this.migachevFileStatus) this.migachevFileStatus.classList.remove('file-selected');
         if (this.loadButtonMigachev) this.loadButtonMigachev.style.display = 'none';
+
+        // Clear file inputs and state - OSD Telemetry
+        if (this.osdFileInput) this.osdFileInput.value = '';
+        this.selectedOsdFile = null;
+        if (this.osdFileStatus) this.osdFileStatus.textContent = 'Не выбран';
+        if (this.osdFileStatus) this.osdFileStatus.classList.remove('file-selected');
+        if (this.loadButtonOsd) this.loadButtonOsd.style.display = 'none';
 
         console.log('✅ Returned to main menu');
     }
@@ -994,6 +1048,72 @@ class FlightVisualizerApp {
         }
     }
 
+    async loadFilesOsd() {
+        try {
+            if (!this.selectedOsdFile) {
+                alert('Пожалуйста, выберите CSV файл');
+                return;
+            }
+
+            console.log(`%c📥 Loading OSD Telemetry file:`, 'color: blue; font-weight: bold');
+            console.log('  CSV file:', this.selectedOsdFile.name, `(${(this.selectedOsdFile.size / 1024).toFixed(1)} KB)`);
+
+            // Show progress
+            document.body.style.cursor = 'wait';
+            const osdContent = document.getElementById('osdTabContent');
+            if (osdContent) {
+                osdContent.style.display = 'none';
+            }
+            this.progressContainer.style.display = 'block';
+
+            // Parse CSV file
+            const smoothCheckbox = document.getElementById('osdSmoothCheckbox');
+            const smoothEnabled = smoothCheckbox ? smoothCheckbox.checked : false;
+            console.log(`🔍 Parsing OSD Telemetry CSV file... (smooth: ${smoothEnabled})`);
+            const parser = new OsdTelemetryParser();
+            this.flightData = await parser.parse(this.selectedOsdFile, (progress, text) => {
+                console.log(`⏳ ${text}: ${progress.toFixed(0)}%`);
+                this.updateProgress(progress, text || 'Парсинг CSV файла...');
+            }, { smooth: smoothEnabled });
+
+            console.log('%c✅ OSD Telemetry parsed successfully!', 'color: green; font-weight: bold');
+            console.log('📊 Flight data:', {
+                points: this.flightData.points.length,
+                duration: this.flightData.duration.toFixed(2) + 's',
+                bounds: this.flightData.bounds,
+                source: this.flightData.source
+            });
+
+            // Log first few points for debugging
+            console.log('🎯 First 3 points:', this.flightData.points.slice(0, 3));
+
+            // Initialize 3D visualization
+            this.updateProgress(100, 'Инициализация 3D сцены...');
+            console.log('🎨 Starting 3D visualization...');
+            await this.initVisualization();
+
+            // Hide drop zone, show visualization
+            document.body.style.cursor = 'default';
+            this.dropZone.style.display = 'none';
+            this.canvasContainer.style.display = 'block';
+
+            console.log('%c🎉 OSD Telemetry visualization loaded!', 'color: green; font-size: 18px; font-weight: bold');
+
+        } catch (error) {
+            console.error('%c❌ Error loading OSD Telemetry file:', 'color: red; font-weight: bold', error);
+            console.error('Stack trace:', error.stack);
+            alert(`Ошибка загрузки файла: ${error.message}`);
+
+            // Reset UI
+            document.body.style.cursor = 'default';
+            const osdContent = document.getElementById('osdTabContent');
+            if (osdContent) {
+                osdContent.style.display = 'block';
+            }
+            this.progressContainer.style.display = 'none';
+        }
+    }
+
     updateProgress(percentage, text) {
         if (this.progressBar) {
             this.progressBar.style.width = `${percentage}%`;
@@ -1245,6 +1365,9 @@ class FlightVisualizerApp {
         if (statusBar) statusBar.style.display = 'block';
         if (mapControls) mapControls.style.display = 'flex';
 
+        // Setup zoom & center controls
+        this.setupZoomControls();
+
         // Toggle logos
         const logoUpload = document.getElementById('logoUpload');
         const logoViz = document.getElementById('logoViz');
@@ -1481,6 +1604,49 @@ class FlightVisualizerApp {
         }
 
         console.log('✅ Denis statistics panel ready');
+    }
+
+    setupZoomControls() {
+        const panel = document.getElementById('zoomControls');
+        if (!panel) return;
+
+        panel.style.display = 'flex';
+
+        const zoomInBtn = document.getElementById('zoomInBtn');
+        const zoomOutBtn = document.getElementById('zoomOutBtn');
+        const centerBtn = document.getElementById('centerOnFlightBtn');
+
+        if (this.useCesium && this.cesiumViewer) {
+            const camera = this.cesiumViewer.getCamera();
+
+            zoomInBtn?.addEventListener('click', () => {
+                camera.zoomIn(camera.positionCartographic.height * 0.3);
+            });
+
+            zoomOutBtn?.addEventListener('click', () => {
+                camera.zoomOut(camera.positionCartographic.height * 0.5);
+            });
+
+            centerBtn?.addEventListener('click', () => {
+                if (this.flightData?.bounds) {
+                    this.cesiumViewer.focusOnBounds(this.flightData.bounds, 1);
+                }
+            });
+        } else if (this.sceneManager) {
+            zoomInBtn?.addEventListener('click', () => {
+                this.sceneManager.camera.position.multiplyScalar(0.7);
+            });
+
+            zoomOutBtn?.addEventListener('click', () => {
+                this.sceneManager.camera.position.multiplyScalar(1.5);
+            });
+
+            centerBtn?.addEventListener('click', () => {
+                if (this.flightData?.bounds) {
+                    this.sceneManager.focusOnBounds(this.flightData.bounds);
+                }
+            });
+        }
     }
 
     dispose() {

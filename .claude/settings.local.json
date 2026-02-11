@@ -15,7 +15,22 @@
       "Bash(powershell -Command \"Get-ChildItem -Recurse -Exclude node_modules | Select-Object FullName | ForEach-Object { $_FullName.Substring\\(''c:\\\\Users\\\\zinna\\\\Documents\\\\Kostya\\\\flight-visualizer''.Length\\).TrimStart\\(''\\\\''\\) }\")",
       "Bash(find:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(npm install)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /F /IM node.exe\")",
+      "Bash(where:*)",
+      "Bash(\"C:\\\\Program Files\\\\Blender Foundation\\\\Blender 5.0\\\\blender.exe\" --background --python \"c:\\\\Dev\\\\flight-visualiser\\\\convert_fbx_to_glb.py\")",
+      "Bash(powershell -command \"\\(Get-Item ''c:\\\\Dev\\\\flight-visualiser\\\\public\\\\models\\\\drone.glb''\\).Length / 1MB\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Migrate to Cesium.js for high-quality terrain visualization\n\nBREAKING CHANGE: 3D models must now be in glTF/GLB format \\(not FBX\\)\n\n## What changed\n- Replaced Three.js terrain \\(Google Maps Static API 640x640\\) with Cesium.js\n- Added Cesium World Terrain with Bing Maps satellite imagery\n- Quality now matches Google Earth / Mission Planner\n\n## Why\n- Google Maps Static API limited to 640x640 pixels \\(blurry terrain\\)\n- Google Elevation API provided only 11x11 grid of elevation points\n- Cesium.js provides streaming high-resolution terrain tiles\n\n## New architecture\n- src/cesium/CesiumViewer.js - Main viewer with World Terrain\n- src/cesium/TrajectoryEntity.js - Flight path \\(Yellow→Red gradient\\)\n- src/cesium/WaypointsEntity.js - Mission waypoints \\(Purple→Cyan\\)\n- src/cesium/DroneEntity.js - 3D drone model\n- src/cesium/CesiumCameraController.js - TOP/FOLLOW/FPV modes\n- src/config/cesium.js - Cesium Ion token and settings\n\n## Model format requirements\n- IMPORTANT: Cesium requires glTF/GLB format \\(not FBX\\)\n- Use convert_fbx_to_glb.py \\(Blender script\\) to convert models\n- Textures must be embedded in GLB file\n- Blender export: File → Export → glTF 2.0 \\(.glb\\) with Images=Embed\n\n## Dependencies added\n- cesium: ^1.125.0\n- vite-plugin-cesium: ^1.0.26\n\n## Other changes\n- Added Migachev parser for custom waypoint format\n- Improved drone orientation calculation with heading offset\n- Three.js code preserved as fallback \\(USE_CESIUM flag in main.js\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []

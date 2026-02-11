@@ -22,6 +22,8 @@ const MAV_CMD = {
     NAV_LAND: 21,
     NAV_TAKEOFF: 22,
     NAV_LOITER_TO_ALT: 31,
+    NAV_LAND_LOCAL: 89,           // Local frame landing (rarely used)
+    DO_CHANGE_SPEED: 178,         // Change speed during mission
     DO_SET_SERVO: 183,
     DO_SET_CAM_TRIGG_DIST: 206
 };
@@ -53,6 +55,7 @@ export class MissionWaypointsParser {
         this.homePosition = null;
         this.totalDistance = 0;
         this.totalTime = 0;
+        this.currentCruiseSpeed = AIRPLANE_SPEEDS.cruise;  // Can be changed by DO_CHANGE_SPEED
     }
 
     /**
@@ -152,6 +155,8 @@ export class MissionWaypointsParser {
             [MAV_CMD.NAV_LAND]: 'LAND',
             [MAV_CMD.NAV_TAKEOFF]: 'TAKEOFF',
             [MAV_CMD.NAV_LOITER_TO_ALT]: 'LOITER_TO_ALT',
+            [MAV_CMD.NAV_LAND_LOCAL]: 'LAND_LOCAL',
+            [MAV_CMD.DO_CHANGE_SPEED]: 'DO_CHANGE_SPEED',
             [MAV_CMD.DO_SET_SERVO]: 'DO_SET_SERVO',
             [MAV_CMD.DO_SET_CAM_TRIGG_DIST]: 'DO_CAM_TRIGG'
         };
@@ -282,6 +287,15 @@ export class MissionWaypointsParser {
                 case MAV_CMD.DO_SET_CAM_TRIGG_DIST:
                     this.processCameraEvent(wp, currentPosition, currentTime);
                     break;
+
+                case MAV_CMD.DO_CHANGE_SPEED:
+                    this.processChangeSpeed(wp, currentTime);
+                    break;
+
+                case MAV_CMD.NAV_LAND_LOCAL:
+                    // Treat as regular landing - coordinates may be in different format
+                    currentTime = this.processLandLocal(wp, currentPosition, currentTime);
+                    break;
             }
         }
 
@@ -333,11 +347,11 @@ export class MissionWaypointsParser {
             wp.lat, wp.lon
         );
 
-        // Determine speed based on altitude change
+        // Determine speed based on altitude change (use currentCruiseSpeed if set by DO_CHANGE_SPEED)
         const altChange = targetAlt - currentPos.alt;
-        let speed = AIRPLANE_SPEEDS.cruise;
-        if (altChange > 10) speed = AIRPLANE_SPEEDS.climb;
-        else if (altChange < -10) speed = AIRPLANE_SPEEDS.descent;
+        let speed = this.currentCruiseSpeed || AIRPLANE_SPEEDS.cruise;
+        if (altChange > 10) speed = Math.min(speed, AIRPLANE_SPEEDS.climb);
+        else if (altChange < -10) speed = Math.min(speed, AIRPLANE_SPEEDS.descent);
 
         const flightTime = distance / speed;
         this.totalDistance += distance;
@@ -544,6 +558,75 @@ export class MissionWaypointsParser {
             waypointIndex: wp.index,
             description: wp.params.p1 > 0 ? `Camera every ${wp.params.p1}m` : 'Camera OFF'
         });
+    }
+
+    /**
+     * Process DO_CHANGE_SPEED command
+     * p1 = speed type (0=airspeed, 1=groundspeed)
+     * p2 = target speed in m/s
+     */
+    processChangeSpeed(wp, currentTime) {
+        const speedType = wp.params.p1;
+        const targetSpeed = wp.params.p2;
+
+        // Update cruise speed for subsequent waypoints
+        if (targetSpeed > 0) {
+            this.currentCruiseSpeed = targetSpeed;
+            console.log(`DO_CHANGE_SPEED: Set ${speedType === 0 ? 'airspeed' : 'groundspeed'} to ${targetSpeed} m/s`);
+        }
+
+        this.events.push({
+            type: 'SPEED_CHANGE',
+            speedType: speedType,
+            speed: targetSpeed,
+            time: currentTime,
+            waypointIndex: wp.index,
+            description: `Speed → ${targetSpeed} m/s (${(targetSpeed * 3.6).toFixed(0)} km/h)`
+        });
+    }
+
+    /**
+     * Process NAV_LAND_LOCAL (command 89)
+     * Coordinates may be in 1e7 format or local frame
+     */
+    processLandLocal(wp, currentPos, currentTime) {
+        let targetLat = wp.lat;
+        let targetLon = wp.lon;
+
+        // Check if coordinates are in 1e7 format (very large numbers)
+        if (Math.abs(wp.lat) > 1000000) {
+            targetLat = wp.lat / 1e7;
+            targetLon = wp.lon / 1e7;
+            console.log(`LAND_LOCAL: Converting 1e7 format -> (${targetLat}, ${targetLon})`);
+        }
+
+        // If no valid coordinates, land at current position
+        if (targetLat === 0 && targetLon === 0) {
+            targetLat = currentPos.lat;
+            targetLon = currentPos.lon;
+        }
+
+        const targetAlt = wp.alt || 0;
+        const distance = this.calculateDistance(
+            currentPos.lat, currentPos.lon,
+            targetLat, targetLon
+        );
+
+        const flightTime = distance > 0 ? distance / AIRPLANE_SPEEDS.landing : 0;
+        this.totalDistance += distance;
+
+        this.flightPath.push({
+            lat: targetLat,
+            lon: targetLon,
+            alt: targetAlt,
+            altAbsolute: targetAlt,
+            time: currentTime + flightTime,
+            speed: AIRPLANE_SPEEDS.landing,
+            command: 'LAND_LOCAL',
+            waypointIndex: wp.index
+        });
+
+        return currentTime + flightTime;
     }
 
     /**
