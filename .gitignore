@@ -40,3 +40,7 @@ coverage/
 # Test data files
 *.dat
 *.kml
+
+# Raw flight data and analysis files
+raw_files_4_analyse/
+nul
