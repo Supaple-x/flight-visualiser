@@ -11,7 +11,15 @@ export class CesiumViewer {
         this.viewer = null;
         this.isInitialized = false;
 
-        this.init();
+        this.readyPromise = this.init();
+    }
+
+    /**
+     * Wait until the viewer, terrain provider, and imagery are fully loaded
+     * @returns {Promise<void>}
+     */
+    async whenReady() {
+        return this.readyPromise;
     }
 
     /**

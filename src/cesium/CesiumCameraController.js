@@ -17,7 +17,7 @@ export class CesiumCameraController {
 
     /**
      * Set camera mode
-     * @param {string} mode - 'TOP', 'FOLLOW', or 'FPV'
+     * @param {string} mode - 'TOP', 'FOLLOW', 'FPV', or 'DOWN'
      */
     setMode(mode) {
         const previousMode = this.mode;
@@ -35,6 +35,9 @@ export class CesiumCameraController {
                 break;
             case 'FPV':
                 this.enableFPVMode();
+                break;
+            case 'DOWN':
+                this.enableDownMode();
                 break;
         }
 
@@ -99,6 +102,63 @@ export class CesiumCameraController {
 
         // Setup FPV update listener
         this.setupFPVListener();
+    }
+
+    /**
+     * Enable down-looking mode (camera on drone, looking straight down)
+     */
+    enableDownMode() {
+        if (!this.droneEntity) {
+            console.warn('Drone entity not available for down mode');
+            return;
+        }
+
+        // Disable default camera controls
+        this.viewer.trackedEntity = undefined;
+        this.viewer.scene.screenSpaceCameraController.enableRotate = false;
+        this.viewer.scene.screenSpaceCameraController.enableTranslate = false;
+        this.viewer.scene.screenSpaceCameraController.enableZoom = true;
+        this.viewer.scene.screenSpaceCameraController.enableTilt = false;
+        this.viewer.scene.screenSpaceCameraController.enableLook = false;
+
+        this.setupDownListener();
+    }
+
+    /**
+     * Setup down-looking camera listener
+     */
+    setupDownListener() {
+        this.preRenderListener = this.viewer.scene.preRender.addEventListener(() => {
+            if (this.mode !== 'DOWN') return;
+
+            const dronePosition = this.droneEntity?.getPosition();
+            if (!dronePosition) return;
+
+            // Get surface normal (up direction) at drone position
+            const surfaceNormal = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(dronePosition, new Cesium.Cartesian3());
+
+            // Position camera at drone (belly-mounted, slightly below center)
+            const cameraPosition = Cesium.Cartesian3.add(
+                dronePosition,
+                Cesium.Cartesian3.multiplyByScalar(surfaceNormal, -1, new Cesium.Cartesian3()),
+                new Cesium.Cartesian3()
+            );
+
+            // Direction is straight down (negative surface normal)
+            const down = Cesium.Cartesian3.negate(surfaceNormal, new Cesium.Cartesian3());
+
+            // "Up" for the camera is north direction at this position
+            const east = new Cesium.Cartesian3();
+            Cesium.Cartesian3.cross(Cesium.Cartesian3.UNIT_Z, surfaceNormal, east);
+            Cesium.Cartesian3.normalize(east, east);
+            const north = new Cesium.Cartesian3();
+            Cesium.Cartesian3.cross(surfaceNormal, east, north);
+            Cesium.Cartesian3.normalize(north, north);
+
+            this.viewer.camera.position = cameraPosition;
+            this.viewer.camera.direction = down;
+            this.viewer.camera.up = north;
+        });
     }
 
     /**

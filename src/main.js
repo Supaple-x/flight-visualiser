@@ -427,8 +427,9 @@ class FlightVisualizerApp {
         const topButton = document.getElementById('cameraTop');
         const followButton = document.getElementById('cameraFollow');
         const fpvButton = document.getElementById('cameraFPV');
+        const downButton = document.getElementById('cameraDown');
 
-        const buttons = [topButton, followButton, fpvButton];
+        const buttons = [topButton, followButton, fpvButton, downButton];
 
         topButton?.addEventListener('click', () => {
             console.log('📷 Camera: Top view');
@@ -443,6 +444,11 @@ class FlightVisualizerApp {
         fpvButton?.addEventListener('click', () => {
             console.log('📷 Camera: FPV mode');
             this.setCameraMode('fpv', fpvButton, buttons);
+        });
+
+        downButton?.addEventListener('click', () => {
+            console.log('📷 Camera: Down view');
+            this.setCameraMode('down', downButton, buttons);
         });
     }
 
@@ -614,12 +620,15 @@ class FlightVisualizerApp {
     }
 
     setCameraMode(mode, activeButton, allButtons) {
-        if (!this.cameraController) {
+        const controller = this.useCesium ? this.cesiumCameraController : this.cameraController;
+        if (!controller) {
             console.warn('⚠️ Camera controller not initialized yet');
             return;
         }
 
-        this.cameraController.setMode(mode);
+        // CesiumCameraController expects uppercase mode names
+        const modeStr = this.useCesium ? mode.toUpperCase() : mode;
+        controller.setMode(modeStr);
 
         // Update button states
         allButtons.forEach(btn => btn?.classList.remove('btn--active'));
@@ -1163,8 +1172,8 @@ class FlightVisualizerApp {
         console.log('1️⃣ Creating CesiumViewer...');
         this.cesiumViewer = new CesiumViewer('cesiumContainer');
 
-        // Wait for Cesium to initialize
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait for Cesium to fully initialize (terrain provider + imagery)
+        await this.cesiumViewer.whenReady();
         console.log('✅ CesiumViewer created with World Terrain');
 
         // Create trajectory entity (with terrain height sampling)
@@ -1199,8 +1208,9 @@ class FlightVisualizerApp {
         console.log('📷 Focusing camera on bounds...');
         await this.cesiumViewer.focusOnBounds(this.flightData.bounds);
 
-        // Store terrain height in flight data for playback
+        // Store terrain height and ground-level altitude in flight data for playback
         this.flightData.terrainHeight = terrainHeight;
+        this.flightData.groundLevelAlt = this.trajectoryEntity.getGroundLevelAlt();
 
         // Create playback controller (adapted for Cesium)
         console.log('6️⃣ Creating PlaybackController...');
@@ -1223,6 +1233,10 @@ class FlightVisualizerApp {
         this.playbackController.onUpdate((data) => {
             this.telemetry.update(data.currentPoint, data.nextPoint, data.interpolation);
             this.timeline.update(data);
+            // Update trail if trail mode is active
+            if (this.trajectoryEntity) {
+                this.trajectoryEntity.updateTrail(data.index);
+            }
         });
         console.log('✅ Callbacks set up');
 
@@ -1543,6 +1557,17 @@ class FlightVisualizerApp {
                     }
                 });
             }
+        }
+
+        // Setup trail mode toggle
+        const trailToggle = document.getElementById('toggleTrailMode');
+        if (trailToggle) {
+            trailToggle.addEventListener('change', (e) => {
+                if (this.trajectoryEntity) {
+                    this.trajectoryEntity.setTrailMode(e.target.checked);
+                    console.log(`🔄 Trail mode: ${e.target.checked}`);
+                }
+            });
         }
 
         console.log('✅ Visibility controls panel ready');

@@ -10,6 +10,9 @@ export class TrajectoryEntity {
         this.viewer = cesiumViewer.getViewer();
         this.entity = null;
         this.visible = true;
+        this.trailMode = false;
+        this.segments = []; // {entity, startIndex, endIndex}
+        this.totalPoints = 0;
     }
 
     /**
@@ -45,12 +48,18 @@ export class TrajectoryEntity {
             console.warn('Could not sample terrain height:', error);
         }
 
-        // Create positions array with terrain offset
+        // Use first point's altitude as ground-level MSL reference.
+        // GPS altitude is MSL (absolute); first point is typically on the ground at takeoff.
+        // Subtracting it gives AGL, then adding Cesium terrain height (ellipsoid) places correctly.
+        const firstAlt = (points[0].gps || points[0]).altitude || (points[0].gps || points[0]).alt || 0;
+        const groundLevelAlt = firstAlt;
+        console.log(`Ground-level MSL altitude: ${groundLevelAlt.toFixed(1)}m (first point)`);
+
         const positions = points.map(point => {
             const gps = point.gps || point;
-            const relativeAlt = gps.altitude || gps.alt || 0;
-            // Add terrain height to relative altitude
-            const absoluteAlt = relativeAlt + terrainHeight;
+            const rawAlt = gps.altitude || gps.alt || 0;
+            // MSL → AGL → ellipsoid: (MSL - groundMSL) + terrainEllipsoid
+            const absoluteAlt = (rawAlt - groundLevelAlt) + terrainHeight;
             return Cesium.Cartesian3.fromDegrees(
                 gps.lon || gps.longitude,
                 gps.lat || gps.latitude,
@@ -58,8 +67,11 @@ export class TrajectoryEntity {
             );
         });
 
-        // Store terrain height for drone positioning
+        // Store for drone positioning
         this.terrainHeight = terrainHeight;
+        this.groundLevelAlt = groundLevelAlt;
+
+        this.totalPoints = points.length;
 
         // Create color gradient (Yellow -> Red) based on time/progress
         const colors = this.createGradientColors(points.length);
@@ -68,14 +80,21 @@ export class TrajectoryEntity {
         // For gradient effect, we create multiple segments
         this.createGradientPolyline(positions, colors);
 
-        console.log(`TrajectoryEntity created with ${points.length} points (terrain offset: ${terrainHeight.toFixed(1)}m)`);
+        console.log(`TrajectoryEntity created with ${points.length} points, ${this.segments.length} segments (terrain offset: ${terrainHeight.toFixed(1)}m)`);
     }
 
     /**
-     * Get terrain height offset
+     * Get terrain height offset (ellipsoid)
      */
     getTerrainHeight() {
         return this.terrainHeight || 0;
+    }
+
+    /**
+     * Get ground-level MSL altitude used as base reference
+     */
+    getGroundLevelAlt() {
+        return this.groundLevelAlt || 0;
     }
 
     /**
@@ -101,15 +120,10 @@ export class TrajectoryEntity {
      * @param {Cesium.Color[]} colors - Array of colors for gradient
      */
     createGradientPolyline(positions, colors) {
-        // For Cesium, we need to create a primitive collection for true per-vertex colors
-        // Alternative: create multiple segments with different colors
+        this.segments = [];
 
-        // Simple approach: Create PolylineCollection with colored segments
-        const scene = this.viewer.scene;
-
-        // Use entity with polyline for simplicity (single color)
-        // For full gradient, we'll create segments
-        const segmentCount = Math.min(positions.length - 1, 100); // Limit segments for performance
+        // Use many segments for fine-grained trail mode (each ~1-2 points)
+        const segmentCount = Math.min(positions.length - 1, 1000);
         const step = Math.max(1, Math.floor(positions.length / segmentCount));
 
         for (let i = 0; i < positions.length - step; i += step) {
@@ -123,7 +137,7 @@ export class TrajectoryEntity {
             const t = i / Math.max(1, positions.length - 1);
             const color = colors[Math.min(Math.floor(t * colors.length), colors.length - 1)];
 
-            this.viewer.entities.add({
+            const entity = this.viewer.entities.add({
                 polyline: {
                     positions: segmentPositions,
                     width: 4,
@@ -134,10 +148,43 @@ export class TrajectoryEntity {
                     clampToGround: false
                 }
             });
+
+            this.segments.push({
+                entity,
+                startIndex: i,
+                endIndex: endIdx - 1
+            });
         }
 
-        // Store reference for visibility toggle
         this.entity = { type: 'trajectory_segments' };
+    }
+
+    /**
+     * Enable/disable trail mode (trajectory appears progressively behind the drone)
+     * @param {boolean} enabled
+     */
+    setTrailMode(enabled) {
+        this.trailMode = enabled;
+        if (!enabled) {
+            // Show all segments when trail mode is turned off
+            for (const seg of this.segments) {
+                seg.entity.show = this.visible;
+            }
+        }
+    }
+
+    /**
+     * Update trail visibility based on current playback index.
+     * Shows only segments the drone has already passed.
+     * @param {number} currentIndex - Current point index from playback
+     */
+    updateTrail(currentIndex) {
+        if (!this.trailMode || !this.visible) return;
+
+        for (const seg of this.segments) {
+            // Show segment only after the drone has fully passed it
+            seg.entity.show = seg.endIndex <= currentIndex;
+        }
     }
 
     /**
@@ -147,12 +194,19 @@ export class TrajectoryEntity {
     setVisible(visible) {
         this.visible = visible;
 
-        // Toggle all trajectory segments
-        this.viewer.entities.values.forEach(entity => {
-            if (entity.polyline) {
-                entity.show = visible;
+        if (this.trailMode) {
+            // In trail mode, don't show all — just keep current state
+            // They'll update on next playback tick
+            if (!visible) {
+                for (const seg of this.segments) {
+                    seg.entity.show = false;
+                }
             }
-        });
+        } else {
+            for (const seg of this.segments) {
+                seg.entity.show = visible;
+            }
+        }
     }
 
     /**

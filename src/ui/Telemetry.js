@@ -94,8 +94,10 @@ export class Telemetry {
 
         // Update speed
         if (this.elements.speed && point.gps?.speed != null) {
-            // Скорость уже в правильных единицах из парсера
-            const speedText = `${point.gps.speed.toFixed(1)} m/s`;
+            // Скорость в m/s и km/h
+            const speedMs = point.gps.speed.toFixed(1);
+            const speedKmh = (point.gps.speed * 3.6).toFixed(1);
+            const speedText = `${speedMs} m/s (${speedKmh} km/h)`;
             if (point.gps.speedEstimated) {
                 // Estimated speed - show in orange with label
                 this.elements.speed.innerHTML = `<span style="color: #ff9800;">${speedText}</span> <span style="color: #ff9800; font-size: 10px;">(Расч.)</span>`;

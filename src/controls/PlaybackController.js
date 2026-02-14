@@ -230,13 +230,14 @@ export class PlaybackController {
      */
     interpolateGpsPosition(point1, point2, t) {
         const baseAltitude = point1.gps.altitude + (point2.gps.altitude - point1.gps.altitude) * t;
-        // Add terrain height offset if available
+        // Convert MSL to ellipsoid: subtract ground-level MSL, add terrain ellipsoid height
         const terrainHeight = this.flightData?.terrainHeight || 0;
+        const groundLevelAlt = this.flightData?.groundLevelAlt || 0;
 
         return {
             lat: point1.gps.lat + (point2.gps.lat - point1.gps.lat) * t,
             lon: point1.gps.lon + (point2.gps.lon - point1.gps.lon) * t,
-            altitude: baseAltitude + terrainHeight
+            altitude: (baseAltitude - groundLevelAlt) + terrainHeight
         };
     }
 

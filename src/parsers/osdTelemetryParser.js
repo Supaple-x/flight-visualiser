@@ -2,13 +2,18 @@
  * OSD Telemetry CSV Parser
  * Parses CSV files extracted from OSD (On-Screen Display) flight telemetry.
  *
- * CSV columns:
- * timestamp, video_sec, lat, lon, altitude, heading, yaw, airspeed, groundspeed,
- * vspeed, pitch, roll, voltage, current, mode, wp_no, wp_dist, sat, home_dist,
- * total_dist, servo, time_val
+ * Supports multiple CSV column formats:
  *
- * Data is sparse: GPS/speed fields appear every row (~1s), full telemetry every ~5s.
- * Missing values are interpolated from neighboring rows.
+ * Format A (22 columns):
+ *   timestamp, video_sec, lat, lon, altitude, heading, yaw, airspeed, groundspeed,
+ *   vspeed, pitch, roll, voltage, current, mode, wp_no, wp_dist, sat, home_dist,
+ *   total_dist, servo, time_val
+ *
+ * Format B (7 columns):
+ *   time_sec, lat, lon, altitude_m, groundspeed_ms, groundcourse_deg, vspeed_ms
+ *
+ * Data is sparse: some fields appear only every N rows.
+ * Missing values (including GPS coordinates) are interpolated from neighboring rows.
  */
 
 export class OsdTelemetryParser {
@@ -49,19 +54,58 @@ export class OsdTelemetryParser {
             throw new Error('CSV file is empty or has no data rows');
         }
 
-        // Parse header
+        // Parse header and build column index with aliases
         const header = lines[0].trim().split(',');
-        const col = {};
+        const headerIndex = {};
         header.forEach((name, index) => {
-            col[name.trim()] = index;
+            headerIndex[name.trim()] = index;
         });
 
+        // Column aliases: maps logical field name to possible CSV column names
+        const ALIASES = {
+            time:        ['video_sec', 'time_sec'],
+            lat:         ['lat'],
+            lon:         ['lon'],
+            altitude:    ['altitude', 'altitude_m'],
+            heading:     ['heading', 'groundcourse_deg'],
+            yaw:         ['yaw'],
+            airspeed:    ['airspeed'],
+            groundspeed: ['groundspeed', 'groundspeed_ms'],
+            vspeed:      ['vspeed', 'vspeed_ms'],
+            pitch:       ['pitch'],
+            roll:        ['roll'],
+            voltage:     ['voltage'],
+            current:     ['current'],
+            sat:         ['sat'],
+            wpNo:        ['wp_no'],
+            homeDist:    ['home_dist'],
+            mode:        ['mode'],
+        };
+
+        // Resolve each logical field to its actual column index (or -1 if not present)
+        const col = {};
+        for (const [field, aliases] of Object.entries(ALIASES)) {
+            col[field] = -1;
+            for (const alias of aliases) {
+                if (alias in headerIndex) {
+                    col[field] = headerIndex[alias];
+                    break;
+                }
+            }
+        }
+
         console.log(`📋 CSV columns (${header.length}):`, header.join(', '));
+        console.log(`📋 Resolved fields:`, Object.entries(col).filter(([, v]) => v >= 0).map(([k]) => k).join(', '));
         console.log(`📋 Data rows: ${lines.length - 1}`);
 
         if (progressCallback) progressCallback(20, 'Парсинг строк...');
 
-        // First pass: parse all rows into raw data
+        // Helper to read a field by resolved column index
+        const getField = (fields, field) => {
+            return col[field] >= 0 ? this.parseFloat(fields[col[field]]) : null;
+        };
+
+        // First pass: parse all rows into raw data (allow null lat/lon for interpolation)
         const rawPoints = [];
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -69,27 +113,26 @@ export class OsdTelemetryParser {
 
             const fields = this.parseCSVLine(line);
 
-            const lat = this.parseFloat(fields[col['lat']]);
-            const lon = this.parseFloat(fields[col['lon']]);
+            const time = getField(fields, 'time') ?? 0;
+            const lat = getField(fields, 'lat');
+            const lon = getField(fields, 'lon');
+            const altitude = getField(fields, 'altitude') ?? 0;
+            const heading = getField(fields, 'heading');
+            const yaw = getField(fields, 'yaw');
+            const airspeed = getField(fields, 'airspeed');
+            const groundspeed = getField(fields, 'groundspeed');
+            const vspeed = getField(fields, 'vspeed');
+            const pitch = getField(fields, 'pitch');
+            const roll = getField(fields, 'roll');
+            const voltage = getField(fields, 'voltage');
+            const current = getField(fields, 'current');
+            const sat = getField(fields, 'sat');
+            const wpNo = getField(fields, 'wpNo');
+            const homeDist = getField(fields, 'homeDist');
+            const mode = col['mode'] >= 0 ? (fields[col['mode']]?.trim() || null) : null;
 
-            // Skip rows with invalid GPS
-            if (lat === null || lon === null || (lat === 0 && lon === 0)) continue;
-
-            const time = this.parseFloat(fields[col['video_sec']]) ?? 0;
-            const altitude = this.parseFloat(fields[col['altitude']]) ?? 0;
-            const heading = this.parseFloat(fields[col['heading']]);
-            const yaw = this.parseFloat(fields[col['yaw']]);
-            const airspeed = this.parseFloat(fields[col['airspeed']]);
-            const groundspeed = this.parseFloat(fields[col['groundspeed']]);
-            const vspeed = this.parseFloat(fields[col['vspeed']]);
-            const pitch = this.parseFloat(fields[col['pitch']]);
-            const roll = this.parseFloat(fields[col['roll']]);
-            const voltage = this.parseFloat(fields[col['voltage']]);
-            const current = this.parseFloat(fields[col['current']]);
-            const sat = this.parseFloat(fields[col['sat']]);
-            const wpNo = this.parseFloat(fields[col['wp_no']]);
-            const homeDist = this.parseFloat(fields[col['home_dist']]);
-            const mode = fields[col['mode']]?.trim() || null;
+            // Skip rows where lat/lon are explicitly zero (invalid sentinel)
+            if (lat === 0 && lon === 0) continue;
 
             rawPoints.push({
                 time, lat, lon, altitude, heading,
@@ -104,7 +147,7 @@ export class OsdTelemetryParser {
         }
 
         if (rawPoints.length === 0) {
-            throw new Error('No valid GPS data found in CSV');
+            throw new Error('No valid data found in CSV');
         }
 
         console.log(`✅ Parsed ${rawPoints.length} valid rows`);
@@ -123,8 +166,10 @@ export class OsdTelemetryParser {
 
         if (progressCallback) progressCallback(90, 'Построение точек...');
 
-        // Build flight points
+        // Build flight points (skip any remaining rows without valid GPS)
         for (const p of rawPoints) {
+            if (p.lat === null || p.lon === null) continue;
+
             const speed = p.groundspeed ?? p.airspeed ?? 0;
 
             this.flightData.points.push({
@@ -186,12 +231,16 @@ export class OsdTelemetryParser {
 
     /**
      * Interpolate missing values in sparse telemetry data.
-     * Fields that are always present (lat, lon, altitude, heading, airspeed, groundspeed)
-     * don't need interpolation. Sparse fields (yaw, vspeed, pitch, roll, voltage, current, sat)
-     * are filled from the nearest available values.
+     * All fields with null values are linearly interpolated from their neighbors.
+     * This includes GPS coordinates (lat, lon) which may be sparse in some CSV formats.
      */
     interpolateGaps(points) {
-        const sparseFields = ['yaw', 'vspeed', 'pitch', 'roll', 'voltage', 'current', 'sat'];
+        const sparseFields = [
+            'lat', 'lon', 'altitude', 'heading',
+            'groundspeed', 'airspeed', 'vspeed',
+            'yaw', 'pitch', 'roll',
+            'voltage', 'current', 'sat'
+        ];
 
         for (const field of sparseFields) {
             let lastKnownIdx = -1;
